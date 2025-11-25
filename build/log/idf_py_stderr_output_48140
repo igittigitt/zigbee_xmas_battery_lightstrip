@@ -1,0 +1,3 @@
+Command: cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Users\muogeisen\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe -DESP_PLATFORM=1 -DSDKCONFIG='d:\Dev\code\zigbee-light\sdkconfig' -DCCACHE_ENABLE=1 D:\Dev\code\zigbee-light
+fatal: not a git repository (or any of the parent directories): .git
+fcae32885--1.6.4-2025-11-23 17:05:29 UTC
