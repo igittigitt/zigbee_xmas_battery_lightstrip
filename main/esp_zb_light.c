@@ -17,30 +17,131 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "ha/esp_zigbee_ha_standard.h"
-#include "esp_zb_light.h"
 #include "driver/ledc.h"
+#include "driver/gpio.h"
+#include "esp_sleep.h"
+#include "esp_zigbee_core.h"
+#include "esp_timer.h"
+#include "driver/rtc_io.h"
+
 
 #if !defined ZB_ED_ROLE
 #error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
 #endif
 
+#define ESP_ZB_ZCL_BASIC_POWER_SOURCE_BATTERY 0x03
+
+/* Zigbee configuration */
+#define INSTALLCODE_POLICY_ENABLE       false                                /* enable the install code policy for security */
+#define ED_AGING_TIMEOUT                ESP_ZB_ED_AGING_TIMEOUT_64MIN        /* aging timeout of device */
+#define ED_KEEP_ALIVE                   3000                                 /* 3000 millisecond */
+#define ESP_ZED_ENDPOINT                1                                    /* esp light device endpoint */
+#define ESP_ZB_PRIMARY_CHANNEL_MASK     ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
+
+/* Basic manufacturer information */
+#define ESP_MANUFACTURER_NAME "\x09""ESPRESSIF"      /* Customized manufacturer name */
+#define ESP_MODEL_IDENTIFIER "\x07"CONFIG_IDF_TARGET /* Customized model identifier */
+
+#define ESP_ZB_ZED_CONFIG()                                         \
+    {                                                               \
+        .esp_zb_role = ESP_ZB_DEVICE_TYPE_ED,                       \
+        .install_code_policy = INSTALLCODE_POLICY_ENABLE,           \
+        .nwk_cfg.zed_cfg = {                                        \
+            .ed_timeout = ED_AGING_TIMEOUT,                         \
+            .keep_alive = ED_KEEP_ALIVE,                            \
+        },                                                          \
+    }
+
+#define ESP_ZB_DEFAULT_RADIO_CONFIG()                           \
+    {                                                           \
+        .radio_mode = ZB_RADIO_MODE_NATIVE,                     \
+    }
+
+#define ESP_ZB_DEFAULT_HOST_CONFIG()                            \
+    {                                                           \
+        .host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE,   \
+    }
+
+
 static TimerHandle_t identify_timer = NULL;
 static TimerHandle_t identify_timeout_timer = NULL;
 
 // GPIO für PWM (für Helligkeit)
-#define LIGHT_PWM_GPIO 13
+#define LIGHT_PWM_GPIO              13
+#define LEDC_TIMER_RESOLUTION       LEDC_TIMER_8_BIT
+#define LEDC_MAX_DUTY               (1 << LEDC_TIMER_RESOLUTION) - 1
+
+
+// Wakeup Button GPIO ("BOOT" Button on ESP32-H2-DevKitC-1)
+//#define BOOT_BUTTON_GPIO GPIO_NUM_9
+//#define WAKEUP_TIME_US   (60ULL * 1000000ULL) // 60 Sekunden
+#define INACTIVITY_TIMEOUT_S    15      // Zeit bis Sleep nach letzter Aktivität
+#define SLEEP_DURATION_S        60      // Wie lange geschlafen wird
+#define BOOT_BUTTON_GPIO        GPIO_NUM_9
+
+#define MANUF_ID            0x1234
+#define CUSTOM_CLUSTER_ID   0xFC00
+#define ATTR_SLEEP_TIME     0x0001
+
+//uint16_t sleep_time_s = 60;   // Default 1 Minute
+//sleep_time_s = load_sleep_time_from_nvs(60);  // fallback 60s
 
 // Globale Variable für aktuelle Helligkeit (0-254)
 static uint8_t current_level = 254;
 static uint8_t stored_level = 254;
 
-static const char *TAG = "ESP_ZB_ON_OFF_LIGHT";
+static bool zigbee_connected = false;
+static int64_t last_activity_time = 0;
+static bool sleep_enabled = true;
+
+static const char *TAG = "SLEEPY_ZIGBEE_XMAS_LIGHTSTRIP";
 
 static void led_set_power(bool power);
 static void led_set_brightness(uint8_t level);
+void enter_light_sleep(void);
+void send_periodic_reports(void);
+static void update_activity_time(void);
 
-/********************* Define functions **************************/
+/********************* LED functions **************************/
 
+static void configure_pwm(void) {
+    ledc_timer_config_t timer_cfg = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_RESOLUTION, // 8-bit resolution (RTC clock in sleep)
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_USE_RC_FAST_CLK // RTC clock can provide PWM while in Light-Sleep
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&timer_cfg));
+
+    ledc_channel_config_t channel_cfg = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .intr_type = LEDC_INTR_DISABLE,
+        .gpio_num = LIGHT_PWM_GPIO,
+        .duty = 0,  // start with LED off
+        .hpoint = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&channel_cfg));
+}
+
+/*
+ * Set brightness of LED strip (Zigbee level 0-254 into PWM duty 0-1023)
+ */
+static void led_set_brightness(uint8_t level)
+{
+    current_level = level;
+    // Convert Zigbee Level (0-254) into PWM Duty-Cycle (0-1023)
+    uint16_t duty = (uint16_t)((level * 1023) / 254);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    ESP_LOGI(TAG, "Brightness set to %d (PWM: %d)", level, duty);
+}
+
+/*
+ * Set brightness of LED strip
+ */
 static void led_set_power(bool power)
 {
     if (power == false) {
@@ -83,45 +184,13 @@ static void start_identify_blink(uint8_t effect_id, uint16_t identify_time)
     }
 }
 
-// PWM-Konfiguration
-static void configure_pwm(void) {
-    ledc_timer_config_t timer_cfg = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LEDC_TIMER_10_BIT,
-        .timer_num = LEDC_TIMER_0,
-        .freq_hz = 5000,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ledc_timer_config(&timer_cfg);
-
-    ledc_channel_config_t channel_cfg = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = LIGHT_PWM_GPIO,
-        .duty = 1023,  // Start at max
-        .hpoint = 0,
-    };
-    ledc_channel_config(&channel_cfg);
-}
-
-// Helligkeit setzen (0-254 -> 0-1023 PWM)
-static void led_set_brightness(uint8_t level) {
-    current_level = level;
-    // Convert Zigbee Level (0-254) into PWM Duty-Cycle (0-1023)
-    uint16_t duty = (uint16_t)((level * 1023) / 254);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    ESP_LOGI(TAG, "Brightness set to %d (PWM: %d)", level, duty);
-}
-
 static esp_err_t deferred_driver_init(void)
 {
     configure_pwm();
-    //light_driver_init(LIGHT_OFF);
     return ESP_OK;
 }
+
+/******************************* ZIGBEE Functions **********************************/
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
@@ -134,11 +203,14 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     esp_err_t err_status = signal_struct->esp_err_status;
     esp_zb_app_signal_type_t sig_type = *p_sg_p;
     switch (sig_type) {
+
     case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
         ESP_LOGI(TAG, "Initialize Zigbee stack");
         esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
         break;
+
     case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
+
     case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
         if (err_status == ESP_OK) {
             ESP_LOGI(TAG, "Deferred driver initialization %s", deferred_driver_init() ? "failed" : "successful");
@@ -154,10 +226,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGW(TAG, "Failed to initialize Zigbee stack (status: %s)", esp_err_to_name(err_status));
         }
         break;
+
     case ESP_ZB_BDB_SIGNAL_STEERING:
         if (err_status == ESP_OK) {
             esp_zb_ieee_addr_t extended_pan_id;
             esp_zb_get_extended_pan_id(extended_pan_id);
+            zigbee_connected = true;
+            update_activity_time();
             ESP_LOGI(TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d, Short Address: 0x%04hx)",
                      extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4],
                      extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0],
@@ -167,9 +242,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
         break;
+
     default:
-        ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type,
-                 esp_err_to_name(err_status));
+        ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type, esp_err_to_name(err_status));
         break;
     }
 }
@@ -228,20 +303,50 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
     esp_err_t ret = ESP_OK;
 
     switch (callback_id) {
-    
-    case ESP_ZB_CORE_IDENTIFY_EFFECT_CB_ID:
-        esp_zb_zcl_identify_effect_message_t *identify_msg = (esp_zb_zcl_identify_effect_message_t *)message;
-        ESP_LOGI(TAG, "Identify effect: %d, duration: %d", identify_msg->effect_id, identify_msg->effect_variant);
-        start_identify_blink(identify_msg->effect_id, identify_msg->effect_variant);
-        break;
+        case ESP_ZB_CORE_IDENTIFY_EFFECT_CB_ID:
+            update_activity_time();
+            esp_zb_zcl_identify_effect_message_t *identify_msg = (esp_zb_zcl_identify_effect_message_t *)message;
+            ESP_LOGI(TAG, "Identify effect: %d, duration: %d", identify_msg->effect_id, identify_msg->effect_variant);
+            start_identify_blink(identify_msg->effect_id, identify_msg->effect_variant);
+            break;
 
-    case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
-        ret = zb_attribute_handler((esp_zb_zcl_set_attr_value_message_t *)message);
-        break;
+        case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
+            update_activity_time();
+            ESP_LOGI(TAG, "Received attribute update");
+            ret = zb_attribute_handler((esp_zb_zcl_set_attr_value_message_t *)message);
+            break;
+            
+        case ESP_ZB_CORE_CMD_DEFAULT_RESP_CB_ID:
+            update_activity_time();
+            break;
+            
+        case ESP_ZB_CORE_REPORT_ATTR_CB_ID:
+            update_activity_time();
+            break;
+/*            
+        case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
+            ESP_LOGI(TAG, "Device started");
+            break;
+            
+        case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
+            ESP_LOGI(TAG, "Device rebooted");
+            break;
 
-    default:
-        ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);
-        break;
+        case ESP_ZB_BDB_SIGNAL_STEERING:
+            if (esp_zb_bdb_is_factory_new()) {
+                ESP_LOGI(TAG, "Start network steering");
+                esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+            } else {
+                ESP_LOGI(TAG, "Device already commissioned");
+                zigbee_connected = true;
+                update_activity_time();
+            }
+            break;
+*/            
+            
+        default:
+            ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);
+            break;
     }
 
     return ret;
@@ -260,7 +365,7 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_endpoint_config_t endpoint_config = {
         .endpoint = ESP_ZED_ENDPOINT,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_DIMMABLE_LIGHT_DEVICE_ID, // ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID,
+        .app_device_id = ESP_ZB_HA_DIMMABLE_LIGHT_DEVICE_ID,
         .app_device_version = 0,
     };
         
@@ -274,8 +379,8 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_attribute_list_t *basic_cluster = esp_zb_basic_cluster_create(&basic_cfg);
     // Add attributes to Basic cluster
-    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, "\x09Espressif"); // Pascal-String
-    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID,  "\x08ESP32H2");
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, "\x09Espressif"); // Pascal-String, max 32 bytes
+    esp_zb_basic_cluster_add_attr(basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID,  "\x08ESP32H2"); // Pascal-String, max 32 bytes
     // Add to cluster list
     esp_zb_cluster_list_add_basic_cluster(cluster_list, basic_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
@@ -332,12 +437,6 @@ static void esp_zb_task(void *pvParameters)
     // Add to cluster list
     esp_zb_cluster_list_add_scenes_cluster(cluster_list, scenes_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
-/*
-    esp_zb_attribute_list_t *esp_zb_power_config_cluster_create(esp_zb_power_config_cluster_cfg_t *power_cfg);
-    esp_zb_attribute_list_t *esp_zb_illuminance_meas_cluster_create(esp_zb_illuminance_meas_cluster_cfg_t *illuminance_cfg);
-    esp_zb_attribute_list_t *esp_zb_electrical_meas_cluster_create(esp_zb_electrical_meas_cluster_cfg_t *electrical_cfg);
-*/
-
     // Add cluster list to endpoint
     esp_zb_ep_list_add_ep(ep_list, cluster_list, endpoint_config);
 
@@ -348,16 +447,148 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_core_action_handler_register(zb_action_handler); // act on everything
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
     ESP_ERROR_CHECK(esp_zb_start(false));
-    esp_zb_stack_main_loop();
+
+    // (re)start activity timer
+    update_activity_time();
+
+    esp_zb_stack_main_loop(); // inifinite loop
 }
 
+// Update Activity Timer
+static void update_activity_time(void) {
+    last_activity_time = esp_timer_get_time() / 1000000; // in Sekunden
+    ESP_LOGI(TAG, "Activity updated");
+}
+
+// Periodische Reports senden (Batterie, etc.)
+void send_periodic_reports(void) {
+    if (!zigbee_connected) {
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Sending periodic reports...");
+    
+    // Hier kannst du Batteriespannung, Sensordaten etc. senden
+    // Beispiel: Battery Voltage Report
+    // esp_zb_zcl_report_attr_cmd_t report_cmd = { ... };
+    // esp_zb_zcl_report_attr_cmd_req(&report_cmd);
+    
+    update_activity_time();
+}
+
+/************************** Power/Sleep Management Task ******************************/
+
+// Sleep-Management Task
+static void sleep_management_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Sleep management task started");
+    
+    while (1) {
+        // Warte kurz
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        
+        // Prüfe ob Zigbee verbunden ist
+        if (!zigbee_connected) {
+            continue;
+        }
+        
+        // Prüfe ob Sleep aktiviert ist
+        if (!sleep_enabled) {
+            continue;
+        }
+        
+        // Berechne Inaktivitätszeit
+        int64_t current_time = esp_timer_get_time() / 1000000;
+        int64_t inactive_time = current_time - last_activity_time;
+        
+        // Wenn Inaktivitätszeit erreicht, gehe in Sleep
+        if (inactive_time >= INACTIVITY_TIMEOUT_S) {
+            ESP_LOGI(TAG, "Inactivity timeout reached (%lld s), entering sleep", inactive_time);
+            
+            // Sende vor dem Sleep noch Reports
+            send_periodic_reports();
+            
+            // Gehe in Light Sleep
+            enter_light_sleep();
+            
+            // Nach Aufwachen: Activity Timer zurücksetzen
+            ESP_LOGI(TAG, "Woke up from sleep!");
+            update_activity_time();
+            
+            // Sende Reports nach Aufwachen
+            send_periodic_reports();
+        }
+    }
+}
+
+// Light Sleep Funktion
+void enter_light_sleep(void) {
+    ESP_LOGI(TAG, "Entering light sleep for %d seconds...", SLEEP_DURATION_S);
+    
+    // Konfiguriere Wake-up Quellen
+    
+    // 1. Timer Wake-up (in Mikrosekunden)
+    esp_sleep_enable_timer_wakeup(SLEEP_DURATION_S * 1000000ULL);
+    
+    // 2. GPIO Wake-up (BOOT Button auf GPIO9)
+    // Konfiguriere GPIO als Input mit Pull-up
+    gpio_config_t gpio_conf = {
+        .pin_bit_mask = (1ULL << BOOT_BUTTON_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&gpio_conf);
+    
+    // GPIO9 Wake-up bei LOW (Button gedrückt)
+    esp_sleep_enable_gpio_wakeup();
+    gpio_wakeup_enable(BOOT_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL);
+     
+    // Informiere Zigbee Stack über Sleep (wichtig für ZED!)
+    // Der Stack muss dem Parent mitteilen, dass wir schlafen
+    esp_zb_sleep_enable(true);
+    
+    // Gehe in Light Sleep
+    esp_light_sleep_start();
+    
+    // Deaktiviere GPIO wakeup nach dem Aufwachen
+    gpio_wakeup_disable(BOOT_BUTTON_GPIO);
+
+    // Prüfe Wake-up Grund
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    switch (wakeup_reason) {
+        case ESP_SLEEP_WAKEUP_TIMER:
+            ESP_LOGI(TAG, "Wakeup caused by timer");
+            break;
+        case ESP_SLEEP_WAKEUP_GPIO:
+            ESP_LOGI(TAG, "Wakeup caused by BOOT button (GPIO%d)", BOOT_BUTTON_GPIO);
+            break;
+        default:
+            ESP_LOGI(TAG, "Wakeup caused by: %d", wakeup_reason);
+            break;
+    }
+    
+    // Reaktiviere Zigbee nach Sleep
+    esp_zb_sleep_enable(false);
+}
+
+/************************** MAIN **********************/
 void app_main(void)
 {
+    ESP_LOGI(TAG, "Starting Zigbee Sleepy End Device");
+    
+    // Zigbee init
     esp_zb_platform_config_t config = {
         .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
     };
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
+
+    // Starte Zigbee Task
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
+    
+    // Starte Sleep Management Task
+    xTaskCreate(sleep_management_task, "Sleep_mgmt", 3072, NULL, 4, NULL);
 }
