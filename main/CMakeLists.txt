@@ -1,11 +1,28 @@
 idf_component_register(
-    SRC_DIRS  "."
-    INCLUDE_DIRS "."
-    PRIV_REQUIRES
-        esp_timer
-        driver
+    SRCS
+        "main.c"
+        "zigbee_device.c"
+        "power_management.c"
+        "status_indicator.c"
+        "clusters/cluster_manager.c"
+        "clusters/on_off_cluster.c"
+        "clusters/identify_cluster.c"
+        "clusters/power_config_cluster.c"
+        "handlers/attribute_handler.c"
+        "light/light.c"
+        "light/light_driver_ws2812.c"
+        "light/light_driver_pwm.c"
+    INCLUDE_DIRS
+        "."
+        "clusters"
+        "handlers"
+        "light"
+    REQUIRES
         nvs_flash
-        esp_driver_uart
-        ieee802154
-        freertos
+        esp_timer
+        esp_pm
+        esp_driver_gpio
+        esp_driver_ledc
+        esp_driver_rmt
+        esp_driver_usb_serial_jtag
 )

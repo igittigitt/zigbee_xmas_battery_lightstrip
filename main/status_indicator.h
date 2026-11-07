@@ -1,0 +1,81 @@
+#ifndef STATUS_INDICATOR_H
+#define STATUS_INDICATOR_H
+
+#include <stdbool.h>
+#include "light_config.h"
+
+/*
+ * Connection status shown on the light chain (no on-board LED, goal Z10).
+ * All functions are non-blocking (light module queue). Called from the
+ * Zigbee task.
+ */
+
+/** Brightness of all indications: ~30 % (goals Z10, Z12). */
+#define IND_LEVEL                   (LIGHT_LEVEL_MAX * 30 / 100)
+
+/** Z12: searching the stored network after power-up: short flash every second. */
+#define IND_SEARCH_ON_MS            100
+#define IND_SEARCH_OFF_MS           900
+
+/**
+ * Z12: stop the search indication after this time without connection and show
+ * the StartUpOnOff state (own choice to protect the battery; rejoin continues).
+ */
+#define IND_SEARCH_TIMEOUT_MS       (3 * 60 * 1000)
+
+/** Z12: rejoined: 3 blinks at a 0.5 s period. */
+#define IND_REJOINED_COUNT          3
+#define IND_REJOINED_ON_MS          250
+#define IND_REJOINED_OFF_MS         250
+
+/** Z10: pairing mode: fast blinking at approx. 2 Hz. */
+#define IND_PAIRING_ON_MS           250
+#define IND_PAIRING_OFF_MS          250
+
+/** Z10: paired: 2 slow pulses (1 s period is our own choice for "slow"). */
+#define IND_PAIRED_COUNT            2
+#define IND_PAIRED_ON_MS            500
+#define IND_PAIRED_OFF_MS           500
+
+/**
+ * @brief Start the search indication (stored network, rejoin after power-up, Z12).
+ *
+ * Light off, short flash every second until status_indicator_connected() or
+ * status_indicator_stop(), at most IND_SEARCH_TIMEOUT_MS
+ * (checked by status_indicator_check_timeout()).
+ */
+void status_indicator_searching(void);
+
+/** @brief Start the pairing indication (no network, Z10). Replaces the search indication. */
+void status_indicator_pairing(void);
+
+/**
+ * @brief Connected: confirmation pattern, then the light state.
+ *
+ * Only has an effect while an indication is active (not after a silent
+ * rejoin during operation, e.g. after parent loss).
+ *
+ * @param on Light state afterwards (StartUpOnOff result, goal Z6)
+ */
+void status_indicator_connected(bool on);
+
+/**
+ * @brief End the indication without confirmation and show the light state.
+ *
+ * Used when pairing times out (Z10: light off) or the search indication
+ * times out (Z12). No effect if no indication is active.
+ *
+ * @param on Light state afterwards
+ */
+void status_indicator_stop(bool on);
+
+/**
+ * @brief End the search indication after IND_SEARCH_TIMEOUT_MS.
+ *
+ * Call on every failed rejoin attempt; no timer of its own (no extra wake-ups).
+ *
+ * @param on Light state afterwards
+ */
+void status_indicator_check_timeout(bool on);
+
+#endif // STATUS_INDICATOR_H

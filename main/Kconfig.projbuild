@@ -1,0 +1,54 @@
+menu "Zigbee Light"
+
+    config ZL_DEBUG
+        bool "DEBUG mode (prototype on USB)"
+        default n
+        # Keep the CPU awake while USB is connected, so flashing and the
+        # console keep working. Light sleep is then only simulated,
+        # see power_management.c.
+        select USJ_NO_AUTO_LS_ON_CONNECTION
+        help
+            Primary build switch of this project.
+
+            y = DEBUG / prototype: ESP32-H2 board powered via USB for flashing
+                and debugging. The light chain is simulated by the on-board
+                WS2812 (RMT driver).
+            n = production: the light chain is driven by an external LED
+                driver (constant current source) via LEDC PWM and a boost
+                converter enable pin.
+
+            Light sleep: while the USB Serial/JTAG port is connected, the
+            CPU does not enter automatic light sleep
+            (selects USJ_NO_AUTO_LS_ON_CONNECTION). Whether the 802.15.4
+            radio still sleeps between keepalives in that case is not
+            documented. Without USB connection the device sleeps for real.
+
+            Further debug-only behaviour is keyed off this option as well
+            (C macro APP_DEBUG in app_config.h).
+
+    config ZL_DEBUG_LIGHT_SLEEP
+        bool "Allow automatic light sleep in DEBUG builds"
+        depends on ZL_DEBUG
+        default n
+        help
+            n (default): DEBUG builds never enter automatic light sleep, so
+            USB flashing and the console always work.
+            y: light sleep as in production, except while the host sends
+            USB SOF packets (USJ_NO_AUTO_LS_ON_CONNECTION). Caution: if the
+            host suspends the USB port (e.g. Windows selective suspend after
+            closing the monitor), the chip sleeps and the USB Serial/JTAG
+            stops responding (no light sleep support on ESP32-H2). Flashing
+            then needs download mode (hold BOOT, press RESET).
+
+    config ZL_DEBUG_BATTERY_PERCENT
+        int "Emulated battery level in % (DEBUG)"
+        depends on ZL_DEBUG
+        range 0 100
+        default 95
+        help
+            DEBUG builds have no battery measurement (USB powered). This value
+            is reported as BatteryPercentageRemaining (Power Configuration
+            cluster) instead of "unknown" (0xFF), so Zigbee2MQTT / Home
+            Assistant show a battery level. BatteryVoltage stays unknown.
+
+endmenu
