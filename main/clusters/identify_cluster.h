@@ -4,7 +4,7 @@
 #include "esp_zigbee.h"
 
 /*
- * The Identify cluster itself is part of the ZHA On/Off Light template
+ * The Identify cluster itself is part of the ZHA Dimmable Light template
  * (cluster_manager.c); this module makes identification visible (goal Z11):
  * the light chain blinks at ZB_IDENTIFY_BLINK_HZ for ZB_IDENTIFY_DURATION_MS.
  */

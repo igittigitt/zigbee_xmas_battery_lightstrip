@@ -4,7 +4,6 @@
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
 #include "app_config.h"
-#include "zigbee_config.h"
 #include "power_management.h"
 #include "light.h"
 
@@ -52,8 +51,8 @@ esp_err_t power_management_init(void)
     const esp_pm_config_t pm_config = {
         .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
         .min_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
-        // Always enabled, as in the esp-zigbee-sdk example: with light_sleep_enable
-        // = false, joining failed with NWK 0xC3 (docs/known-issues.md, 1c).
+        // Always enabled, as in the esp-zigbee-sdk example; DEBUG builds block
+        // light sleep with a PM lock below instead of disabling it here.
         .light_sleep_enable = true,
     };
     esp_err_t ret = esp_pm_configure(&pm_config);
@@ -61,7 +60,7 @@ esp_err_t power_management_init(void)
         ESP_LOGE(TAG, "esp_pm_configure failed: %s", esp_err_to_name(ret));
         return ret;
     }
-    if (APP_LIGHT_SLEEP || ZB_TEST_NO_AWAKE_LOCK) {
+    if (APP_LIGHT_SLEEP) {
         ESP_LOGI(TAG, "Automatic light sleep enabled (CPU %d MHz)", CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
         return ESP_OK;
     }

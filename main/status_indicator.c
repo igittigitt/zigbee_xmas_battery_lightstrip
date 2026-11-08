@@ -45,18 +45,12 @@ void status_indicator_pairing(void)
 
 void status_indicator_connected(bool on)
 {
-    switch (s_state) {
-    case IND_SEARCHING:
-        ESP_LOGI(TAG, "Rejoined: %d blinks, then %s", IND_REJOINED_COUNT, on ? "ON" : "OFF");
-        run(IND_REJOINED_ON_MS, IND_REJOINED_OFF_MS, IND_REJOINED_COUNT, on);
-        break;
-    case IND_PAIRING:
-        ESP_LOGI(TAG, "Paired: %d pulses, then %s", IND_PAIRED_COUNT, on ? "ON" : "OFF");
-        run(IND_PAIRED_ON_MS, IND_PAIRED_OFF_MS, IND_PAIRED_COUNT, on);
-        break;
-    default:
+    if (s_state == IND_NONE) {
         return;
     }
+    ESP_LOGI(TAG, "%s: light %d s, then %s", s_state == IND_PAIRING ? "Paired" : "Rejoined",
+             IND_CONNECTED_ON_MS / 1000, on ? "ON" : "OFF");
+    run(IND_CONNECTED_ON_MS, 0, 1, on);
     s_state = IND_NONE;
 }
 

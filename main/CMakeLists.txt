@@ -6,6 +6,7 @@ idf_component_register(
         "status_indicator.c"
         "clusters/cluster_manager.c"
         "clusters/on_off_cluster.c"
+        "clusters/level_cluster.c"
         "clusters/identify_cluster.c"
         "clusters/power_config_cluster.c"
         "handlers/attribute_handler.c"

@@ -32,10 +32,22 @@ esp_err_t light_fade_to(uint8_t level, uint32_t ramp_ms);
 /**
  * @brief Switch on/off with the default soft-start/-stop ramp (goal Z3).
  *
- * @param on true = LIGHT_LEVEL_ON, false = 0
+ * @param on true = "on" level (light_set_on_level(), default LIGHT_LEVEL_ON), false = 0
  * @return see light_fade_to()
  */
 esp_err_t light_set_on(bool on);
+
+/**
+ * @brief Set the brightness used for "on" (dimming, non-blocking).
+ *
+ * If the light is on, it fades to the new level with the soft ramp
+ * (LIGHT_RAMP_MS, goal Z3); if it is off, the level is only stored and used
+ * by the next light_set_on(true) / light_pattern_then(..., true).
+ *
+ * @param level 1..LIGHT_LEVEL_MAX (0 is treated as 1)
+ * @return see light_fade_to()
+ */
+esp_err_t light_set_on_level(uint8_t level);
 
 /**
  * @brief Flash pattern: "on" phase at level, then "off" phase, repeated.
@@ -45,7 +57,8 @@ esp_err_t light_set_on(bool on);
 typedef struct {
     uint8_t level;      /**< Level of the "on" phases, 0..LIGHT_LEVEL_MAX */
     uint32_t on_ms;     /**< Duration of an "on" phase, >= LIGHT_BLINK_RAMP_MS */
-    uint32_t off_ms;    /**< Duration of an "off" phase, >= LIGHT_BLINK_RAMP_MS */
+    uint32_t off_ms;    /**< Duration of an "off" phase, >= LIGHT_BLINK_RAMP_MS;
+                             0 only with count = 1 (steady pulse, then directly to the final state) */
     uint32_t count;     /**< Number of flashes, 0 = endless (until the next command) */
 } light_pattern_t;
 

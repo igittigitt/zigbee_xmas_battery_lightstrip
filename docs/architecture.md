@@ -21,19 +21,18 @@ zigbee-light/
     ├── zigbee_device.[ch]      # Stack-Init, Commissioning (Pairing, Rejoin), Signal-Handler, Task
     ├── power_management.[ch]   # esp_pm (automatischer Light Sleep), DEBUG-Sleep-Bericht
     ├── clusters/
-    │   ├── cluster_manager.[ch]       # Baut Endpoint (ZHA On/Off Light) und registriert ihn
+    │   ├── cluster_manager.[ch]       # Baut Endpoint (ZHA Dimmable Light) und registriert ihn
     │   ├── on_off_cluster.[ch]        # On/Off ↔ Licht-Modul, StartUpOnOff (Z6)
     │   ├── identify_cluster.[ch]      # Identify → Blinken (Z11)
     │   └── power_config_cluster.[ch]  # Power Configuration (Akku, Z7)
     ├── handlers/
     │   └── attribute_handler.[ch]     # Routing eingehender ZCL-Aktionen
-    ├── light/
-    │   ├── light.[ch]                # Lichtsteuerung: Task, Rampen (Z3), öffentliche API
-    │   ├── light_config.h            # Pins, Rampendauer, Timings, PWM-Parameter
-    │   ├── light_driver.h            # Backend-Schnittstelle light_driver_t
-    │   ├── light_driver_ws2812.c     # Backend DEBUG: Onboard-WS2812 über RMT
-    │   └── light_driver_pwm.c        # Backend Produktiv: LEDC-PWM + Boost-EN
-    └── _OLD_esp_zb_light.c     # Altes Espressif-Beispiel (1.x-API), nicht im Build
+    └── light/
+        ├── light.[ch]                # Lichtsteuerung: Task, Rampen (Z3), öffentliche API
+        ├── light_config.h            # Pins, Rampendauer, Timings, PWM-Parameter
+        ├── light_driver.h            # Backend-Schnittstelle light_driver_t
+        ├── light_driver_ws2812.c     # Backend DEBUG: Onboard-WS2812 über RMT
+        └── light_driver_pwm.c        # Backend Produktiv: LEDC-PWM + Boost-EN
 ```
 
 ## Schichten
@@ -53,7 +52,7 @@ zigbee-light/
         │ beim Init                 │ Callbacks vom Stack
 ┌───────▼──────────────────┐ ┌──────▼────────────────────────┐
 │ cluster_manager.c        │ │ attribute_handler.c           │
-│  ZHA On/Off Light        │ │  SET_ATTR_VALUE → Cluster-    │
+│  ZHA Dimmable Light      │ │  SET_ATTR_VALUE → Cluster-    │
 │  + Basic-Identität       │ │  spezifischer Handler         │
 │  + power_config_cluster  │ │                               │
 └──────────────────────────┘ └──────┬────────────────────────┘
@@ -118,7 +117,7 @@ on_off_cluster.c ──light_set_on()/light_fade_to()──► light.c
 ```
 
 - **Schnittstelle** `light_driver_t` ([light_driver.h](../main/light/light_driver.h)): `init`, `power(on)` (Endstufe/Boost, optional), `set_level(0..255)`, `fade(target, ms)` (optional – fehlt sie, rampt `light.c` in Software).
-- **Blinken:** `light_blink_start(period_ms, duration_ms)` blinkt mit `LIGHT_BLINK_LEVEL` und kurzen Rampen (`LIGHT_BLINK_RAMP_MS`, 50 ms) und kehrt danach zum zuletzt gesetzten Zustand zurück. Ein neuer Auftrag bricht das Blinken ab. Genutzt für Identify (Z11), vorgesehen für die Pairing-Anzeige (Z10).
+- **Muster:** `light_pattern_start(&pattern)` und `light_pattern_then(&pattern, on)` spielen ein `light_pattern_t` ab (Helligkeit, An-/Aus-Zeit, Anzahl, 0 = endlos) mit kurzen Rampen (`LIGHT_BLINK_RAMP_MS`, 50 ms). `_start` kehrt danach zum zuletzt gesetzten Zustand zurück, `_then` setzt den neuen Zustand `on` und fährt ihn mit `LIGHT_RAMP_MS` an. `off_ms = 0` mit `count = 1` ergibt einen Dauerpuls, nach dem direkt der Endzustand angefahren wird. Ein neuer Auftrag bricht das Muster ab. Genutzt für Identify (Z11) und die Statusanzeige `status_indicator.c` (Z10, Z12).
 - **Rampen:** `LIGHT_RAMP_MS` (1 s) gilt für 0 ↔ 100 %; Teilstrecken werden anteilig kürzer. Ein neuer Auftrag bricht eine Software-Rampe ab und setzt am erreichten Wert fort; ein Hardware-Fade läuft zu Ende.
 - **Einschalten:** `power(true)` (Boost EN, Settle-Zeit) → Rampe hoch. **Ausschalten:** Rampe auf 0 → `power(false)` (PWM stoppen, Timer anhalten, Boost aus – Z9).
 - **Neues Backend:** `light_driver_<name>.c` mit einer `const light_driver_t` anlegen, in `light_driver.h` deklarieren, Auswahl in `light_init()` ([light.c](../main/light/light.c)), Quelle in `main/CMakeLists.txt`.

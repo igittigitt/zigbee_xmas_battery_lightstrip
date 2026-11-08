@@ -2,7 +2,7 @@
 
 API-Stand: esp-zigbee-lib 2.0.5 (`ezb_*`), siehe [zigbee-framework.md](zigbee-framework.md#programmiermodell-205). Als Beispiel dient der Cluster **Level Control** (`0x0008`, `EZB_ZCL_CLUSTER_ID_LEVEL`). Dimmen ist im Projekt zurückgestellt ([goals.md](goals.md)); das Beispiel zeigt nur das Vorgehen.
 
-Grundregel: Cluster, die die ZHA-Vorlage schon mitbringt (Basic, Identify, Groups, Scenes, On/Off beim „On/Off Light“), werden **nicht** zusätzlich angelegt. Ihr Modul behandelt nur Attributänderungen, Beispiel [on_off_cluster.c](../main/clusters/on_off_cluster.c). Neue Cluster werden wie unten an den Endpoint gehängt, Beispiel [power_config_cluster.c](../main/clusters/power_config_cluster.c).
+Grundregel: Cluster, die die ZHA-Vorlage schon mitbringt (Basic, Identify, Groups, Scenes, On/Off und Level Control beim „Dimmable Light“), werden **nicht** zusätzlich angelegt. Ihr Modul behandelt nur Attributänderungen, Beispiel [on_off_cluster.c](../main/clusters/on_off_cluster.c). Neue Cluster werden wie unten an den Endpoint gehängt, Beispiel [power_config_cluster.c](../main/clusters/power_config_cluster.c).
 
 ## 1. Header – `main/clusters/level_cluster.h`
 

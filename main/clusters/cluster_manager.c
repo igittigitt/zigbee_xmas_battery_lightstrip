@@ -7,6 +7,7 @@
 #include "cluster_manager.h"
 #include "power_config_cluster.h"
 #include "on_off_cluster.h"
+#include "level_cluster.h"
 
 static const char *TAG = "CLUSTER_MANAGER";
 
@@ -42,22 +43,24 @@ static esp_err_t basic_add_identity(ezb_af_ep_desc_t ep_desc)
 
 esp_err_t cluster_manager_register_device(void)
 {
-    ezb_zha_on_off_light_config_t light_cfg = EZB_ZHA_ON_OFF_LIGHT_CONFIG();
+    ezb_zha_dimmable_light_config_t light_cfg = EZB_ZHA_DIMMABLE_LIGHT_CONFIG();
     light_cfg.basic_cfg.power_source = EZB_ZCL_BASIC_POWER_SOURCE_BATTERY;
+    light_cfg.level_cfg.current_level = ZB_LEVEL_DEFAULT;  // template default 0xFF is no valid level
 
     ezb_af_device_desc_t dev_desc = ezb_af_create_device_desc();
-    ezb_af_ep_desc_t ep_desc = ezb_zha_create_on_off_light(ZB_ENDPOINT, &light_cfg);
+    ezb_af_ep_desc_t ep_desc = ezb_zha_create_dimmable_light(ZB_ENDPOINT, &light_cfg);
     ESP_RETURN_ON_FALSE(dev_desc && ep_desc, ESP_ERR_NO_MEM, TAG, "Descriptor allocation");
 
     ESP_RETURN_ON_ERROR(basic_add_identity(ep_desc), TAG, "Basic identity");
     ESP_RETURN_ON_ERROR(on_off_cluster_add(ep_desc), TAG, "On/Off extension");
+    ESP_RETURN_ON_ERROR(level_cluster_add(ep_desc), TAG, "Level Control extension");
     ESP_RETURN_ON_ERROR(power_config_cluster_add(ep_desc), TAG, "Power Configuration");
 
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_af_device_add_endpoint_desc(dev_desc, ep_desc)),
                         TAG, "Add endpoint");
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_af_device_desc_register(dev_desc)), TAG, "Register device");
 
-    ESP_LOGI(TAG, "Endpoint %d registered: On/Off Light, %s / %s", ZB_ENDPOINT,
+    ESP_LOGI(TAG, "Endpoint %d registered: Dimmable Light, %s / %s", ZB_ENDPOINT,
              ZB_MANUFACTURER_NAME, ZB_MODEL_IDENTIFIER);
     return ESP_OK;
 }

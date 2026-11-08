@@ -6,7 +6,7 @@
 /**
  * @brief Build the data model and register it with the Zigbee stack.
  *
- * Creates endpoint ZB_ENDPOINT as ZHA On/Off Light (device ID 0x0100) with the
+ * Creates endpoint ZB_ENDPOINT as ZHA Dimmable Light (device ID 0x0101) with the
  * clusters Basic, Identify, Groups, Scenes, On/Off (from the ZHA template,
  * On/Off extended by StartUpOnOff) plus Power Configuration, and registers
  * the device.

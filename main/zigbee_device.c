@@ -20,8 +20,10 @@
 #include "zigbee_device.h"
 #include "cluster_manager.h"
 #include "on_off_cluster.h"
+#include "level_cluster.h"
 #include "attribute_handler.h"
 #include "status_indicator.h"
+#include "app_config.h"
 
 static const char *TAG = "ZIGBEE_DEVICE";
 
@@ -32,8 +34,9 @@ static ezb_bdb_comm_mode_mask_t s_retry_mode;
 /* End of the current pairing window (esp_timer time in us), 0 = no window. */
 static int64_t s_pairing_deadline_us;
 
-/* Current rejoin backoff delay. */
-static uint32_t s_rejoin_delay_ms = ZB_REJOIN_RETRY_MIN_MS;
+/* Rejoin retries: number of attempts so far and current backoff delay. */
+static uint32_t s_rejoin_attempts;
+static uint32_t s_rejoin_delay_ms;
 
 /* ---------------------------------------------------------------------------
  * Commissioning helpers (Zigbee task context unless noted)
@@ -72,6 +75,9 @@ static void cancel_scheduled_commissioning(void)
 
 static void pairing_start(void)
 {
+    // A retry may still be scheduled (e.g. steering failed, then the stack left
+    // the network): starting twice fails with EZB_ERR_BUSY.
+    cancel_scheduled_commissioning();
     s_pairing_deadline_us = esp_timer_get_time() + (int64_t)ZB_PAIRING_TIMEOUT_MS * 1000;
     ESP_LOGI(TAG, "Pairing window open for %d s (network steering)", ZB_PAIRING_TIMEOUT_MS / 1000);
     status_indicator_pairing();
@@ -90,30 +96,46 @@ static void pairing_retry_or_stop(void)
     status_indicator_stop(false);   // goal Z10: light off after the pairing timeout
 }
 
-static void rejoin_schedule(void)
+static void rejoin_reset(void)
 {
-    ESP_LOGI(TAG, "Rejoin attempt in %" PRIu32 " ms", s_rejoin_delay_ms);
-    schedule_commissioning(EZB_BDB_MODE_INITIALIZATION, s_rejoin_delay_ms);
-    s_rejoin_delay_ms = (s_rejoin_delay_ms >= ZB_REJOIN_RETRY_MAX_MS / 2)
-                            ? ZB_REJOIN_RETRY_MAX_MS
-                            : s_rejoin_delay_ms * 2;
+    s_rejoin_attempts = 0;
+    s_rejoin_delay_ms = 2 * ZB_REJOIN_RETRY_MIN_MS;
 }
 
-/* Diagnostics (rejoin investigation, docs/known-issues.md 1c): neighbor table incl. parent. */
-static void log_neighbors(const char *when)
+/* Fast phase (1 s, like the Espressif example), then exponential backoff. */
+static void rejoin_schedule(void)
 {
-    static const char *const rel_names[] = {"PARENT", "CHILD", "SIBLING", "OTHER"};
+    uint32_t delay_ms = ZB_REJOIN_RETRY_MIN_MS;
+
+    if (s_rejoin_attempts >= ZB_REJOIN_FAST_ATTEMPTS) {
+        delay_ms = s_rejoin_delay_ms;
+        s_rejoin_delay_ms = (s_rejoin_delay_ms >= ZB_REJOIN_RETRY_MAX_MS / 2) ? ZB_REJOIN_RETRY_MAX_MS
+                                                                               : s_rejoin_delay_ms * 2;
+    }
+    s_rejoin_attempts++;
+    ESP_LOGI(TAG, "Rejoin attempt %" PRIu32 " in %" PRIu32 " ms", s_rejoin_attempts + 1, delay_ms);
+    schedule_commissioning(EZB_BDB_MODE_INITIALIZATION, delay_ms);
+}
+
+/* Log the parent of the end device (diagnostics, neighbor table, ezbee/nwk.h). */
+static void log_parent(void)
+{
     ezb_nwk_info_iterator_t it = EZB_NWK_INFO_ITERATOR_INIT;
     ezb_nwk_neighbor_info_t nbr;
-    int count = 0;
 
     while (ezb_nwk_get_next_neighbor(&it, &nbr) == EZB_ERR_NONE) {
-        ESP_LOGI(TAG, "%s: neighbor 0x%04hx IEEE 0x%016llx type %u rel %s rx_on %u lqi %u rssi %d", when,
-                 nbr.short_addr, (unsigned long long)nbr.ieee_addr.u64, nbr.device_type,
-                 nbr.relationship < 4 ? rel_names[nbr.relationship] : "?", nbr.rx_on_when_idle, nbr.lqi, nbr.rssi);
-        count++;
+        if (nbr.relationship == EZB_NWK_RELATIONSHIP_PARENT) {
+            ESP_LOGI(TAG, "Parent 0x%04hx (IEEE 0x%016llx), LQI %u, RSSI %d dBm", nbr.short_addr,
+                     (unsigned long long)nbr.ieee_addr.u64, nbr.lqi, nbr.rssi);
+        }
     }
-    ESP_LOGI(TAG, "%s: %d neighbor(s)", when, count);
+    if (APP_DEBUG) {
+        // Diagnostics for docs/known-issues.md 1c: the IDF 802.15.4 driver
+        // defaults to the maximum (ESP32-H2: 20 dBm); does the stack change it?
+        int8_t tx_power = 0;
+        ezb_get_tx_power(&tx_power);
+        ESP_LOGI(TAG, "TX power %d dBm", tx_power);
+    }
 }
 
 static void on_network_joined(const char *how)
@@ -124,10 +146,11 @@ static void on_network_joined(const char *how)
              ezb_nwk_get_panid(), (unsigned long long)ext_pan_id.u64, ezb_nwk_get_current_channel(),
              ezb_nwk_get_short_address());
     s_pairing_deadline_us = 0;
-    s_rejoin_delay_ms = ZB_REJOIN_RETRY_MIN_MS;
+    rejoin_reset();
     cancel_scheduled_commissioning();
-    log_neighbors("joined");
+    log_parent();
     on_off_cluster_sync_attribute();
+    level_cluster_sync_attribute();
     // Confirmation pattern, then the StartUpOnOff state (goals Z10/Z12); no
     // effect after a silent rejoin during operation.
     status_indicator_connected(on_off_cluster_get_state());
@@ -157,6 +180,7 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *app_signal)
         // Until then: search indication (goal Z12); replaced by the pairing
         // indication if the device turns out to be factory new.
         on_off_cluster_load_startup();
+        level_cluster_load_startup();   // brightness for "on" (StartUpCurrentLevel)
         status_indicator_searching();
         ESP_LOGI(TAG, "Stack started, BDB initialization");
         start_commissioning(EZB_BDB_MODE_INITIALIZATION);
@@ -166,8 +190,8 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *app_signal)
     case EZB_BDB_SIGNAL_DEVICE_REBOOT: {
         ezb_bdb_comm_status_t status = signal_bdb_status(app_signal);
         if (status != EZB_BDB_STATUS_SUCCESS) {
+            // Expected several times after a reboot (stack behaviour, known-issues 1c)
             ESP_LOGW(TAG, "%s failed (status 0x%02x)", ezb_app_signal_to_string(type), status);
-            log_neighbors("rejoin failed");
             status_indicator_check_timeout(on_off_cluster_get_state());
             rejoin_schedule();
         } else if (ezb_bdb_is_factory_new()) {
@@ -194,7 +218,7 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *app_signal)
         // 2.0.5 (RELEASE_NOTES.md). Whether this is the intended reaction is not
         // documented by Espressif.
         ESP_LOGW(TAG, "Parent lost");
-        s_rejoin_delay_ms = ZB_REJOIN_RETRY_MIN_MS;
+        rejoin_reset();
         rejoin_schedule();
         break;
 
@@ -258,9 +282,6 @@ static esp_err_t zigbee_setup(void)
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_app_signal_add_handler(zigbee_signal_handler)),
                         TAG, "signal handler");
     ezb_nwk_set_rx_on_when_idle(ZB_RX_ON_WHEN_IDLE);
-    ESP_LOGI(TAG, "Default scan duration %u, set to %u (channel %d, secondary all)",
-             ezb_bdb_get_scan_duration(), ZB_SCAN_DURATION, ZB_NETWORK_CHANNEL);
-    ezb_bdb_set_scan_duration(ZB_SCAN_DURATION);
 
     // Data model: endpoint with clusters, then ZCL action callbacks
     ESP_RETURN_ON_ERROR(cluster_manager_register_device(), TAG, "device registration");
@@ -276,6 +297,7 @@ void zigbee_device_task(void *arg)
         .name = "zb_retry",
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_retry_timer));
+    rejoin_reset();
 
     ESP_ERROR_CHECK(zigbee_setup());
     ESP_ERROR_CHECK(esp_zigbee_start(false));

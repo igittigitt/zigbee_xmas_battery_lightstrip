@@ -17,7 +17,7 @@ Gerätemodell und Commissioning der Firmware. Grundlage: esp-zigbee-lib 2.0.5. D
 
 ## Endpoint und Cluster
 
-Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `0x0100` (On/Off Light)**. Erzeugt wird er mit `ezb_zha_create_on_off_light()`, siehe [cluster_manager.c](../main/clusters/cluster_manager.c).
+Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `0x0101` (Dimmable Light)**, seit 2026-11-08; vorher `0x0100` On/Off Light. Erzeugt wird er mit `ezb_zha_create_dimmable_light()`, siehe [cluster_manager.c](../main/clusters/cluster_manager.c). Nach dem Wechsel muss Z2M das Gerät neu interviewen.
 
 | Cluster | ID | Herkunft | Inhalt / Verhalten |
 |---|---|---|---|
@@ -26,6 +26,7 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 | Groups | `0x0004` | ZHA-Vorlage | Verwaltet der Stack |
 | Scenes | `0x0005` | ZHA-Vorlage | Verwaltet der Stack |
 | On/Off | `0x0006` | ZHA-Vorlage + Erweiterung | `OnOff` → Licht-Modul (Rampe, Z3). Zusätzlich `StartUpOnOff` (`0x4003`, Default `ZB_START_UP_ON_OFF_DEFAULT` = aus, Z6, in Z2M `power_on_behavior`). `OnOff` und `StartUpOnOff` sind persistent ([on_off_cluster.c](../main/clusters/on_off_cluster.c)) |
+| Level Control | `0x0008` | ZHA-Vorlage + Erweiterung | Die Befehle (MoveToLevel, Move, Step, Stop, jeweils auch WithOnOff) verarbeitet der Stack. Jede Änderung von `CurrentLevel` meldet er per `SET_ATTR_VALUE`, wie im 2.0.5-Beispiel `color_dimmable_light`. `CurrentLevel` 0x00–0xFE wird auf die Ein-Helligkeit 1–255 des Licht-Moduls abgebildet (`light_set_on_level()`, Rampe Z3). Ist das Licht aus, wird die Helligkeit nur gespeichert. Zusätzlich `StartUpCurrentLevel` (`0x4000`, Default `ZB_START_UP_CURRENT_LEVEL_DEFAULT` = 0xFF vorherige, Z13). `CurrentLevel` und `StartUpCurrentLevel` sind persistent ([level_cluster.c](../main/clusters/level_cluster.c)) |
 | Power Configuration | `0x0001` | [power_config_cluster.c](../main/clusters/power_config_cluster.c) | `BatteryVoltage` und `BatteryPercentageRemaining` = `0xFF` (ungültig/unbekannt), bis die Akkumessung (Z7) umgesetzt ist. **DEBUG-Build:** `BatteryPercentageRemaining` = `CONFIG_ZL_DEBUG_BATTERY_PERCENT` × 2 (Default 95 % → 190), einstellbar per `menuconfig` → *Zigbee Light* |
 
 ### Einschaltverhalten (Z6)
@@ -50,7 +51,12 @@ Quellen zu `0xFF`:
 - zigbee-herdsman-converters `src/converters/fromZigbee.ts` verarbeitet beide Werte nur, wenn sie `< 255` sind.
 - Home Assistant zeigt also keinen erfundenen Akkustand.
 
-Identify, Groups und Scenes sind Pflicht-Cluster der ZHA-Vorlage „On/Off Light“. Sie kosten keinen Strom, solange niemand sie benutzt.
+### Dimmen (Z13), offene Punkte
+
+- **[UNBELEGT]** Ob der Stack bei Befehlen mit Übergangszeit (TransitionTime > 0) bzw. bei Move/Step `CurrentLevel` in Zwischenschritten setzt und dafür die CPU periodisch weckt, ist nicht dokumentiert. Am Gerät prüfen: Helligkeit in Z2M mit `transition` ändern und die Log-Zeilen `Level …` zählen.
+- **[UNBELEGT]** Welche Einstellungen Z2M ohne eigenen Converter anbietet (Helligkeit sicher erwartet; `current_level_startup` bzw. `level_config` offen). Nach dem Neu-Interview in Z2M unter „Exposes“ prüfen.
+
+Identify, Groups und Scenes sind Pflicht-Cluster der ZHA-Vorlage „Dimmable Light“. Sie kosten keinen Strom, solange niemand sie benutzt.
 
 > Änderungen an Endpoint, Device ID, Clusterliste, Manufacturer oder Model erfordern in Z2M ein erneutes Interview.
 

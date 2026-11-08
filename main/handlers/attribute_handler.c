@@ -2,6 +2,7 @@
 #include "zigbee_config.h"
 #include "attribute_handler.h"
 #include "on_off_cluster.h"
+#include "level_cluster.h"
 #include "identify_cluster.h"
 
 static const char *TAG = "ATTR_HANDLER";
@@ -20,6 +21,10 @@ static void set_attr_value_handler(const ezb_zcl_set_attr_value_message_t *messa
     switch (message->info.cluster_id) {
     case EZB_ZCL_CLUSTER_ID_ON_OFF:
         on_off_cluster_attribute_changed(&message->in.attribute);
+        break;
+
+    case EZB_ZCL_CLUSTER_ID_LEVEL:
+        level_cluster_attribute_changed(&message->in.attribute);
         break;
 
     case EZB_ZCL_CLUSTER_ID_IDENTIFY:

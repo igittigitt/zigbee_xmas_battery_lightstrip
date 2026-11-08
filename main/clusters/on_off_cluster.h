@@ -6,7 +6,7 @@
 #include "esp_zigbee.h"
 
 /*
- * The On/Off cluster itself is part of the ZHA On/Off Light template
+ * The On/Off cluster itself is part of the ZHA Dimmable Light template
  * (cluster_manager.c); this module extends it and connects it to the light
  * module.
  */

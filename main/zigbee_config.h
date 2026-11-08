@@ -11,17 +11,11 @@
 
 #include "esp_zigbee.h"
 
-/**
- * TEMPORARY (2026-11-07, docs/known-issues.md 1c): 1 = no own DEBUG awake PM
- * lock (as in the first working firmware), to test one change at a time.
- */
-#define ZB_TEST_NO_AWAKE_LOCK           1
-
 /* ---------------------------------------------------------------------------
  * Device identity
  * ------------------------------------------------------------------------- */
 
-/** Endpoint of the On/Off light (device ID 0x0100, ezb_zha_create_on_off_light). */
+/** Endpoint of the dimmable light (device ID 0x0101, ezb_zha_create_dimmable_light). */
 #define ZB_ENDPOINT                     1
 
 /**
@@ -47,6 +41,21 @@
  * ("power_on_behavior"), stored persistently by the stack.
  */
 #define ZB_START_UP_ON_OFF_DEFAULT      EZB_ZCL_ON_OFF_START_UP_ON_OFF_SET_ON_OFF_TO_OFF
+
+/**
+ * Dimming (Level Control cluster 0x0008, Dimmable Light 0x0101), added on
+ * 2026-11-08 at the user's request.
+ *
+ * ZB_LEVEL_DEFAULT: CurrentLevel before any brightness was ever set
+ * (ZCL range 0x00..0xFE; 0xFE = full brightness). Own choice.
+ *
+ * ZB_START_UP_CURRENT_LEVEL_DEFAULT: default of StartUpCurrentLevel (0x4000):
+ * 0x00 = minimum, 0x01..0xFE = this level, 0xFF = previous level. Own choice:
+ * previous (analogous to the expectation "brightness survives a battery
+ * change"). Changeable from Zigbee2MQTT, stored persistently.
+ */
+#define ZB_LEVEL_DEFAULT                    0xFE
+#define ZB_START_UP_CURRENT_LEVEL_DEFAULT   0xFF
 
 /* ---------------------------------------------------------------------------
  * Network role and end device timing
@@ -90,13 +99,6 @@
 #define ZB_PRIMARY_CHANNEL_MASK         (1UL << ZB_NETWORK_CHANNEL)
 #define ZB_SECONDARY_CHANNEL_MASK       0x07FFF800UL
 
-/**
- * Scan duration per channel (ezb_bdb_set_scan_duration): ((1 << n) + 1) * 15.36 ms.
- * 5 = ~507 ms. Stack default is logged at startup ("default scan duration").
- * Longer scans to catch beacons reliably (rejoin found 0 neighbors, known-issues 1c).
- */
-#define ZB_SCAN_DURATION                5
-
 /** Pairing window (network steering) before giving up, goal Z10: 3 min. */
 #define ZB_PAIRING_TIMEOUT_MS           (3 * 60 * 1000)
 
@@ -104,10 +106,18 @@
 #define ZB_STEERING_RETRY_MS            1000
 
 /**
- * Rejoin of a known network (after reboot or parent loss): retry with
- * exponential backoff from MIN to MAX, without time limit. The values are
- * our own choice (trade-off reaction time vs. battery), not from a source.
+ * Rejoin of a known network (after reboot or parent loss).
+ *
+ * esp-zigbee-lib 2.0.5 typically needs several BDB initialization attempts
+ * after a reboot (~5-6 s each): the unmodified Espressif example
+ * light_sleep_end_device (1 s retry) rejoined at the 5th attempt after ~25 s
+ * on 2026-11-07, see docs/known-issues.md 1c and esp-zigbee-sdk #894.
+ * Therefore: ZB_REJOIN_FAST_ATTEMPTS attempts with ZB_REJOIN_RETRY_MIN_MS pause
+ * (as the example), then exponential backoff up to ZB_REJOIN_RETRY_MAX_MS,
+ * without time limit. Counts and MAX are our own choice (reaction time vs.
+ * battery), not from a source.
  */
+#define ZB_REJOIN_FAST_ATTEMPTS         10
 #define ZB_REJOIN_RETRY_MIN_MS          1000
 #define ZB_REJOIN_RETRY_MAX_MS          (5 * 60 * 1000)
 

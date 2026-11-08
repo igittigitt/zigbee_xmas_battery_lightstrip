@@ -37,15 +37,13 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/main.c` | `app_main`: NVS, Power Mgmt, Licht, startet Zigbee-Task |
 | `main/zigbee_config.h` | Zentrale Zigbee-Konstanten (Identität, Endpoint, Keepalive, Pairing/Rejoin-Zeiten) |
 | `main/zigbee_device.c` | Stack-Init, Commissioning (Pairing-Fenster, Rejoin-Backoff), Signal-Handler; API `zigbee_device_start_pairing/_factory_reset/_is_joined` |
-| `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „On/Off Light“ + Zusatzcluster und registriert ihn |
-| `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `power_config` Akku) |
+| `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „Dimmable Light“ + Zusatzcluster und registriert ihn |
+| `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `level` ↔ Helligkeit, `identify`, `power_config` Akku) |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |
 | `main/power_management.c` | `esp_pm` (automatischer Light Sleep), DEBUG-Sleep-Bericht |
 | `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG** (`CONFIG_ZL_DEBUG` → `APP_DEBUG` 0/1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
 | `main/light/light.c` | Lichtsteuerung: Task, Rampen, API `light_set_on`/`light_fade_to` (nicht blockierend) |
 | `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `ws2812` (DEBUG, Onboard-LED), `pwm` (Produktiv, LEDC + Boost-EN) |
-| `main/_OLD_esp_zb_light.c` | Altes Beispiel (1.x-API), **nicht** im Build, nicht ändern, nicht als API-Vorlage nutzen |
-
 ## Konventionen
 
 - Neue Cluster nach dem Muster in [docs/extending.md](docs/extending.md): `<name>_cluster.[ch]` in `main/clusters/`, Funktionen `<name>_cluster_add/_update/_attribute_changed`, Registrierung in `cluster_manager.c`, Routing in `attribute_handler.c`, Quelle in `main/CMakeLists.txt` eintragen.

@@ -13,9 +13,12 @@
 /** Brightness of all indications: ~30 % (goals Z10, Z12). */
 #define IND_LEVEL                   (LIGHT_LEVEL_MAX * 30 / 100)
 
-/** Z12: searching the stored network after power-up: short flash every second. */
-#define IND_SEARCH_ON_MS            100
-#define IND_SEARCH_OFF_MS           900
+/**
+ * Z12: searching the stored network after power-up: short flash every second.
+ * 50 ms = LIGHT_BLINK_RAMP_MS, the shortest allowed "on" phase.
+ */
+#define IND_SEARCH_ON_MS            50
+#define IND_SEARCH_OFF_MS           950
 
 /**
  * Z12: stop the search indication after this time without connection and show
@@ -23,19 +26,15 @@
  */
 #define IND_SEARCH_TIMEOUT_MS       (3 * 60 * 1000)
 
-/** Z12: rejoined: 3 blinks at a 0.5 s period. */
-#define IND_REJOINED_COUNT          3
-#define IND_REJOINED_ON_MS          250
-#define IND_REJOINED_OFF_MS         250
-
 /** Z10: pairing mode: fast blinking at approx. 2 Hz. */
 #define IND_PAIRING_ON_MS           250
 #define IND_PAIRING_OFF_MS          250
 
-/** Z10: paired: 2 slow pulses (1 s period is our own choice for "slow"). */
-#define IND_PAIRED_COUNT            2
-#define IND_PAIRED_ON_MS            500
-#define IND_PAIRED_OFF_MS           500
+/**
+ * Z10/Z12: connected (rejoined or paired): light steady for this time, then
+ * the StartUpOnOff state (Z6; off if no state is stored yet).
+ */
+#define IND_CONNECTED_ON_MS         2000
 
 /**
  * @brief Start the search indication (stored network, rejoin after power-up, Z12).
@@ -50,7 +49,7 @@ void status_indicator_searching(void);
 void status_indicator_pairing(void);
 
 /**
- * @brief Connected: confirmation pattern, then the light state.
+ * @brief Connected: light steady for IND_CONNECTED_ON_MS, then the light state.
  *
  * Only has an effect while an indication is active (not after a silent
  * rejoin during operation, e.g. after parent loss).

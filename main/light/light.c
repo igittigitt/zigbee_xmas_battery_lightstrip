@@ -26,6 +26,7 @@ static const light_driver_t *s_drv;
 static QueueHandle_t s_queue;
 static uint8_t s_level;                 // momentary output level (light task only)
 static volatile uint8_t s_target;       // last requested (persistent) level
+static volatile uint8_t s_on_level = LIGHT_LEVEL_ON;   // level used for "on" (dimming)
 
 static esp_err_t light_power(bool on)
 {
@@ -101,7 +102,8 @@ static void light_apply_level(uint8_t level, uint32_t ramp_ms)
 
 /**
  * Run a flash pattern ("on" phase at pattern level, then "off" phase), count
- * times or endlessly, then fade to s_target. A new command aborts the
+ * times or endlessly, then fade to s_target. With off_ms = 0 (count = 1) the
+ * light fades from the pulse level directly to s_target. A new command aborts the
  * pattern; the new command then defines the light state.
  */
 static void light_run_pattern(const light_cmd_t *cmd)
@@ -115,6 +117,9 @@ static void light_run_pattern(const light_cmd_t *cmd)
         }
         light_apply_level(cmd->level, LIGHT_BLINK_RAMP_MS);
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(p->on_ms));
+        if (p->off_ms == 0) {
+            break;  // single steady pulse: fade directly to s_target
+        }
         if (light_cmd_pending()) {
             return;
         }
@@ -188,7 +193,19 @@ esp_err_t light_fade_to(uint8_t level, uint32_t ramp_ms)
 
 esp_err_t light_set_on(bool on)
 {
-    return light_fade_to(on ? LIGHT_LEVEL_ON : 0, LIGHT_RAMP_MS);
+    return light_fade_to(on ? s_on_level : 0, LIGHT_RAMP_MS);
+}
+
+esp_err_t light_set_on_level(uint8_t level)
+{
+    if (!s_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_on_level = level ? level : 1;     // "on" never means dark
+    if (s_target == 0) {
+        return ESP_OK;                  // off: only remember the level
+    }
+    return light_fade_to(s_on_level, LIGHT_RAMP_MS);
 }
 
 static esp_err_t light_pattern_queue(const light_pattern_t *pattern, uint32_t final_ramp_ms)
@@ -196,7 +213,9 @@ static esp_err_t light_pattern_queue(const light_pattern_t *pattern, uint32_t fi
     if (!s_queue) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!pattern || pattern->on_ms < LIGHT_BLINK_RAMP_MS || pattern->off_ms < LIGHT_BLINK_RAMP_MS) {
+    // off_ms = 0 is only allowed for a single steady pulse (count = 1)
+    if (!pattern || pattern->on_ms < LIGHT_BLINK_RAMP_MS ||
+        (pattern->off_ms < LIGHT_BLINK_RAMP_MS && !(pattern->off_ms == 0 && pattern->count == 1))) {
         return ESP_ERR_INVALID_ARG;
     }
     const light_cmd_t cmd = {
@@ -218,7 +237,7 @@ esp_err_t light_pattern_start(const light_pattern_t *pattern)
 esp_err_t light_pattern_then(const light_pattern_t *pattern, bool on)
 {
     // Afterwards switch to on/off with the soft ramp (goal Z3)
-    s_target = on ? LIGHT_LEVEL_ON : 0;
+    s_target = on ? s_on_level : 0;
     return light_pattern_queue(pattern, LIGHT_RAMP_MS);
 }
 
