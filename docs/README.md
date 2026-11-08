@@ -2,7 +2,7 @@
 
 Batteriebetriebene Zigbee-LED-Lichterkette auf Basis des **ESP32-H2**, gebaut mit **ESP-IDF 5.5.4** und dem Espressif-Zigbee-SDK (`esp-zigbee-lib` **2.0.5**). Ziel ist ein schlafendes Zigbee End Device (Sleepy End Device), das in **Zigbee2MQTT** auftaucht, per On/Off geschaltet werden kann und möglichst stromsparend läuft.
 
-> Status: Prototyp. Die Firmware baut fehlerfrei, ist aber auf Hardware noch nicht getestet. Akkumessung, Taster und Pairing-Anzeige fehlen noch. Siehe [Bekannte Probleme](known-issues.md).
+> Status: Prototyp. Die Firmware baut fehlerfrei, ist aber auf Hardware noch nicht getestet. Taster und Tiefentladeschutz fehlen noch; die Akkumessung ist umgesetzt, aber ohne Hardware ungetestet. Siehe [Bekannte Probleme](known-issues.md).
 
 ## Inhalt
 

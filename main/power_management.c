@@ -3,9 +3,11 @@
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
+#include "soc/uart_pins.h"
 #include "app_config.h"
 #include "power_management.h"
 #include "light.h"
+#include "battery_config.h"
 
 static const char *TAG = "POWER_MGMT";
 
@@ -28,7 +30,8 @@ bool power_management_sleep_is_simulated(void)
  */
 static void sleep_report_gpios(void)
 {
-    uint64_t mask = light_get_gpio_mask() | SLEEP_REPORT_EXTRA_GPIO_MASK;
+    uint64_t mask = light_get_gpio_mask() | SLEEP_REPORT_EXTRA_GPIO_MASK |
+                    (APP_BATTERY_ADC ? (1ULL << BATTERY_ADC_GPIO) : 0);
 
     ESP_LOGI(TAG, "GPIO report (behaviour in a REAL light sleep):");
     for (int gpio = 0; gpio < GPIO_NUM_MAX; gpio++) {
@@ -65,8 +68,8 @@ esp_err_t power_management_init(void)
         return ESP_OK;
     }
 
-    // DEBUG without ZL_DEBUG_LIGHT_SLEEP: keep the chip awake with a PM lock
-    // instead of disabling light sleep in the PM configuration.
+    // DEBUG level 1: keep the chip awake with a PM lock instead of disabling
+    // light sleep in the PM configuration.
     static esp_pm_lock_handle_t s_awake_lock;
     ret = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "debug_awake", &s_awake_lock);
     if (ret == ESP_OK) {
@@ -76,8 +79,7 @@ esp_err_t power_management_init(void)
         ESP_LOGE(TAG, "DEBUG awake lock failed: %s", esp_err_to_name(ret));
         return ret;
     }
-    ESP_LOGW(TAG, "DEBUG: light sleep blocked by PM lock (Kconfig ZL_DEBUG_LIGHT_SLEEP=n), "
-                  "USB always available");
+    ESP_LOGW(TAG, "DEBUG level 1: light sleep blocked by PM lock, USB always available");
     return ESP_OK;
 #else
     ESP_LOGW(TAG, "CONFIG_PM_ENABLE / CONFIG_FREERTOS_USE_TICKLESS_IDLE not set: no light sleep");
@@ -93,8 +95,8 @@ void power_management_report(void)
     if (!APP_LIGHT_SLEEP) {
         // No sleep at all: nothing simulated, GPIO report still useful for sleep tests
     } else if (!SLEEP_USB_KEEPS_AWAKE) {
-        ESP_LOGW(TAG, "DEBUG: CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION not set, "
-                      "USB console will drop during light sleep");
+        ESP_LOGW(TAG, "DEBUG level %d: real light sleep, USB console will drop; "
+                      "monitor via UART0 (TX GPIO %d)", APP_DEBUG_LEVEL, U0TXD_GPIO_NUM);
     } else if (power_management_sleep_is_simulated()) {
         ESP_LOGW(TAG, "DEBUG: USB connected -> light sleep is SIMULATED (CPU stays awake). "
                       "Disconnect USB for real sleep.");

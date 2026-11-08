@@ -6,6 +6,7 @@
 #include "zigbee_config.h"
 #include "cluster_manager.h"
 #include "power_config_cluster.h"
+#include "battery_runtime_cluster.h"
 #include "on_off_cluster.h"
 #include "level_cluster.h"
 
@@ -55,6 +56,7 @@ esp_err_t cluster_manager_register_device(void)
     ESP_RETURN_ON_ERROR(on_off_cluster_add(ep_desc), TAG, "On/Off extension");
     ESP_RETURN_ON_ERROR(level_cluster_add(ep_desc), TAG, "Level Control extension");
     ESP_RETURN_ON_ERROR(power_config_cluster_add(ep_desc), TAG, "Power Configuration");
+    ESP_RETURN_ON_ERROR(battery_runtime_cluster_add(ep_desc), TAG, "Battery runtime");
 
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_af_device_add_endpoint_desc(dev_desc, ep_desc)),
                         TAG, "Add endpoint");
@@ -63,4 +65,11 @@ esp_err_t cluster_manager_register_device(void)
     ESP_LOGI(TAG, "Endpoint %d registered: Dimmable Light, %s / %s", ZB_ENDPOINT,
              ZB_MANUFACTURER_NAME, ZB_MODEL_IDENTIFIER);
     return ESP_OK;
+}
+
+void cluster_manager_update_runtime(const battery_runtime_t *runtime)
+{
+    esp_zigbee_lock_acquire(portMAX_DELAY);
+    battery_runtime_cluster_update(runtime);    // errors are logged
+    esp_zigbee_lock_release();
 }

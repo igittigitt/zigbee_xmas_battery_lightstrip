@@ -39,6 +39,9 @@ static esp_err_t pwm_power(bool on)
         vTaskDelay(pdMS_TO_TICKS(LIGHT_PWM_EN_SETTLE_MS));
     } else {
         ESP_RETURN_ON_ERROR(ledc_stop(PWM_MODE, PWM_CHANNEL, 0), TAG, "ledc_stop");
+        // Let the timer run until the stop (idle level 0) is applied, otherwise
+        // the output can freeze high when the timer is paused (light_config.h)
+        vTaskDelay(pdMS_TO_TICKS(LIGHT_PWM_STOP_LATCH_MS) + 1);
         ESP_RETURN_ON_ERROR(ledc_timer_pause(PWM_MODE, PWM_TIMER), TAG, "timer pause");
         ESP_RETURN_ON_ERROR(gpio_set_level(LIGHT_PWM_EN_GPIO, 0), TAG, "EN off");
     }

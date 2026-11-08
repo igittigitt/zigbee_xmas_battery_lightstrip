@@ -45,4 +45,7 @@ extern const light_driver_t light_driver_ws2812;
 /** Backend: external LED driver via LEDC PWM + enable pin (production). */
 extern const light_driver_t light_driver_pwm;
 
+/** Backend: WS2812 and PWM output in parallel (DEBUG, tests the real light chain). */
+extern const light_driver_t light_driver_debug;
+
 #endif // LIGHT_DRIVER_H

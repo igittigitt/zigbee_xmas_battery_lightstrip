@@ -31,6 +31,18 @@ Zwei getrennte Pfade, damit LED-Lastsprünge die ESP-Versorgung nicht stören:
 - **PWM** an den Dimm-/Enable-Eingang der KSQ für Soft-Start/-Stop (Ziel Z3) und Pairing-Blinken (Z10).
 - Einschaltreihenfolge: Boost EN → kurze Stabilisierung → PWM-Rampe hoch. Ausschalten umgekehrt.
 
+### Messung LED-Kette (2026-11-08)
+
+Vom Nutzer gemessen, am **Original-Timer mit 3× AA**: Spannung an der Kette **ca. 2,9 V**, Strom **100 mA**.
+
+- Daraus (Rechnung): LED-Leistung ≈ 2,9 V × 0,1 A ≈ 0,29 W, passt zur bisherigen Annahme 0,3 W.
+- Noch offen: Wurde die Spannung direkt an den Anschlüssen der Kette gemessen? Wie hoch war dabei die Batteriespannung? Davon hängt ab, ob der Timer den Strom regelt (KSQ) oder nur einen Vorwiderstand hat – „genau 100 mA“ deutet auf Regelung hin, belegt ist das nicht.
+- **Widerspruch zur Praxis:** Laut Nutzer halten die 3× AA im Alltag (6 h/Tag) **1–2 Wochen**. Mit konstant 100 mA ergibt die Rechnung aus den Datenblättern nur ≈ 4 Tage (siehe [Laufzeitabschätzung](#grobe-laufzeitabschätzung-led-an)).
+- **Hypothese:** Ich glaube es könnte so sein: Der Timer begrenzt den Strom nur mit einem Vorwiderstand und regelt nicht. Dann sinkt der Strom mit der Batteriespannung, z. B. mit angenommenen ~16 Ω (aus (4,5 V − 2,9 V) / 0,1 A): 3,9 V → ≈ 60 mA, 3,6 V → ≈ 45 mA, 3,3 V → ≈ 25 mA (Rechnung; die sinkende Flussspannung bei kleinerem Strom ist nicht berücksichtigt). Ein mittlerer Strom von grob 40–50 mA ergäbe mit ≈ 2.500 mAh ≈ 50–60 h, also 1,5–2 Wochen bei 6 h/Tag – passend zur Beobachtung. Die Kette wird dabei allmählich dunkler. Weitere mögliche Gründe: Taktung (PWM) durch den Timer, Erholung der Zellen in den Pausen, Spannungsabfall am Shunt des Multimeters bei der Strommessung. Alles [UNBELEGT].
+- **Prüfung:** Szenario S9 / Aufbau M4 in [power-measurement.md](power-measurement.md#m4--original-timer-statt-3-aa-referenz-s9) (Strom über der Spannung am Timer), alternativ Blick ins Timer-Gehäuse (ein einzelner Widerstand in Reihe zur Kette).
+- **Folge, falls bestätigt:** Die Kette ist im Alltag offenbar mit deutlich weniger als 100 mA hell genug. Dimmen per PWM (Z13) auf z. B. 40–60 % würde den Verbrauch etwa halbieren (Annahme: Strom linear zum Tastgrad) – bei gleichbleibender Helligkeit bis zum Abschalten. Rechnung: 18650 mit 3.000 mAh und 50 mA ≈ 60 h ≈ 10 Tage bei 6 h/Tag.
+- Ich glaube es könnte so sein: Die Kette ist parallel geschaltet (eine Flussspannung von ~2,9 V entspricht einer einzelnen weißen LED). Anzahl der LEDs und eventuelle Vorwiderstände in der Kette sind [UNBELEGT].
+
 ### Wirkungsgrad des LED-Pfads
 
 Eine lineare KSQ verheizt die Differenz zwischen Versorgung und LED-Flussspannung:
@@ -46,6 +58,34 @@ Wirkungsgrad einer linearen KSQ = V_F / V_Versorgung; gesamt = η_Boost × V_F /
 | Boost-LED-Treiber mit Konstantstrom | Wirkungsgrad aus Datenblatt des konkreten ICs | [UNBELEGT] |
 
 Ob die KSQ linear oder getaktet arbeitet, entscheidet über die gesamte Rechnung – erst mit dem Typ belastbar.
+
+#### Variante ohne Boost: lineare KSQ direkt am Akku
+
+Mit der gemessenen Flussspannung von 2,9 V liegt die Akkuspannung im ganzen Nutzbereich **über** der LED-Spannung. Ein Boost ist dann nicht nötig, sofern die KSQ mit wenig Spannungsreserve auskommt. **Rechnung, keine Messung:**
+
+| Akkuspannung | Reserve für die KSQ (U_Akku − 2,9 V) | Wirkungsgrad 2,9 V / U_Akku |
+|---|---|---|
+| 4,2 V (voll) | 1,3 V | ≈ 69 % |
+| 3,7 V (nominal) | 0,8 V | ≈ 78 % |
+| 3,3 V (Abschaltschwelle Z8) | 0,4 V | ≈ 88 % |
+
+- **Bedingung:** Dropout der KSQ bei 100 mA ≤ ca. 0,4 V, damit die vollen 100 mA bis zur Abschaltschwelle Z8 fließen. Unterhalb der Reserve regelt die KSQ nicht mehr, die Kette wird dann allmählich dunkler. Dropout des vorhandenen KSQ-Shields: [OFFEN].
+- **Akkustrom = LED-Strom** (lineare Regelung, plus Eigenverbrauch der KSQ): ≈ 100 mA. Zum Vergleich Boost 5 V + lineare KSQ: 5 V × 0,1 A / 0,9 / 3,7 V ≈ 150 mA (Rechnung mit η_Boost 90 % und 3,7 V). Also rund ein Drittel weniger Strom, ein Bauteil weniger und kein Leerlaufstrom des Boost im Standby.
+- Die Flussspannung steigt mit dem Strom und sinkt mit der Temperatur; 2,9 V gilt für die gemessenen 100 mA bei Raumtemperatur. Wie stark sie schwankt, ist [UNBELEGT].
+- Weiterhin nötig: Abschalten der KSQ bei LED aus (EN-Eingang oder Lastschalter), PWM für Rampen und Dimmen (Z3, Z13). Abschaltstrom der vorhandenen KSQ siehe [KSQ-Modul](#ksq-modul-ld06ajsa).
+
+### KSQ-Modul LD06AJSA
+
+Label auf dem Modul laut Nutzer „L006AJSA“; im Handel heißt es **LD06AJSA** (Händlerangaben: 2,8–6 V, 30–1500 mA, PWM < 2 kHz, Überstrom 1,9 A typ.). Händlerseiten (manuals.plus, Elecbee) waren für automatische Abrufe gesperrt; Angaben dort nur aus Suchergebnissen.
+
+- **Treiber-IC:** **CN5711** (Consonance). Aufschrift auf dem IC vom Nutzer geprüft (2026-11-08). Die Händlerwerte stimmen mit dem Datenblatt überein (2,8–6 V, bis 1,5 A, Überstrom 1,9 A typ., PWM an CE < 2 kHz). Datenblatt: [datasheets/CN5711_datasheet.pdf](../datasheets/CN5711_datasheet.pdf) (Consonance REV 1.1, Kopie von mikrocontroller.net).
+- **Linearregler**, kein Schaltregler: „current regulation“, Verlust P = (VCC − V_LED) × I_LED (Datenblatt S. 1, S. 5). Dropout 30 mV bei 100 mA, 370 mV bei 1,5 A (S. 4, V_DROP) – erfüllt die Bedingung der [Variante ohne Boost](#variante-ohne-boost-lineare-ksq-direkt-am-akku).
+- **CE-Eingang** (Pin 8, „Chip Enable“, S. 3): High = an, Low = aus. Schwellen V_CEL ≤ 0,6 V, V_CEH ≥ 2,3 V, Eingangsstrom ±1 µA (S. 4). 3,3-V-Logik des ESP32-H2 reicht. PWM direkt an CE, f < 2 kHz (S. 6, Method 1) – unsere 1 kHz passen.
+- **Abschaltstrom** bei CE = 0 V: ≤ 1 µA (S. 4, I_VCC2). Ruhestrom eingeschaltet 200–320 µA (I_VCC1).
+- **Offener CE leuchtet voll** (Beobachtung des Nutzers, 2026-11-08). Der IC selbst hat laut Datenblatt keinen nennenswerten Pull-up (±1 µA). Ich glaube es könnte so sein: Das Modul zieht CE über einen Widerstand an VCC (Datenblatt-Applikation: CE direkt an VCC, S. 2). Wert [UNBELEGT].
+- **CE an GPIO 10 (PWM) blieb nach „aus“ an, an GPIO 11 (einfacher Ausgang) nicht** (Nutzer, 2026-11-08). Ursache vermutlich in der Firmware: LEDC-Timer wurde direkt nach `ledc_stop()` pausiert, bevor der Ruhepegel übernommen war. Korrektur: `LIGHT_PWM_STOP_LATCH_MS` in `light_config.h` (2 PWM-Perioden warten vor `ledc_timer_pause()`); **am Gerät bestätigt** (2026-11-08). Der Mechanismus (Übernahme erst beim Timer-Überlauf) ist weiterhin nicht durch Doku belegt.
+- **Folge für den Akku:** Solange der ESP CE auf Low hält, fließt durch diesen Pull-up dauerhaft VCC / R_pu – auch im Light Sleep. Beispiel (Rechnung, R_pu angenommen): 4,2 V / 10 kΩ = 420 µA. Messen: Strom von CE nach GND bei eingeschaltetem Modul (Multimeter im µA-Bereich).
+- **Pull-up am ESP-Pin:** VCC (Akku bis 4,2 V) liegt über 3,3 V. Über den Pull-up fließt dann Strom in GPIO 10, begrenzt durch R_pu. [UNBELEGT], ob unbedenklich – sicherer ist, den Pull-up zu entfernen.
 
 ### ESP-Regler
 
@@ -87,6 +127,10 @@ Begründung: Der ESP32-H2 läuft ab 3,0 V, und unterhalb ~3,3 V Akkuspannung gre
 - Versorgungsbereich ESP32-H2 laut Datenblatt (Tab. 4-2): **3,0 – 3,6 V**.
 - **Dropout-Betrieb:** Belegt ist laut RT9080-Datenblatt (DS9080-09, EC-Tabelle S. 6) nur: Dropout 0,31 V typ. / 0,53 V max. bei 600 mA, V_OUT ≥ 3 V, definiert bei V_OUT = 98 % des Nennwerts; Pass-Element ist ein P-MOSFET (§17.2). **Wie sich der Ausgang verhält, wenn V_IN unter den Sollwert fällt (ob er V_IN durchreicht), sagt das Datenblatt nicht** [UNBELEGT].
   - Ich glaube es könnte so sein: Der P-MOSFET schaltet dann voll durch und V_ESP ≈ V_Akku − I × R_on. Mit R_on aus dem Dropout gerechnet (0,31 V / 0,6 A ≈ 0,52 Ω typ., 0,53 V / 0,6 A ≈ 0,88 Ω max.) wären das ≈ 0 mV im Sleep, 14–24 mV bei RX (27 mA), 20–66 mV bei TX 0–9 dBm (38–75 mA), 80–135 mV bei TX 20 dBm (153 mA); der ESP bliebe bis ca. 3,05–3,15 V Akkuspannung im spezifizierten Bereich. **Per Messung prüfen** (Source Meter, Spannung schrittweise senken, V_3V3 messen).
+  - **Messung mit dem Original-LDO ME6217 (2026-11-08)**, PPK2 Source Meter am 5V-Pin, ohne LED-Pfad, DEBUG-Build: **bis 3,00 V stabil, ab 2,9 V Reboot-Schleife, unter 2,74 V kein Start mehr.** Für den RT9080 steht die Messung noch aus.
+    Achtung: Das sind die **am PPK2 eingestellten** Werte. Am 5V-Pin lagen laut späterer Messung (siehe [Kalibrierung](#kalibrierung)) ≈ 0,11–0,13 V weniger an. Bei 3,00 V Einstellung zeigte der Fluke am Pin **2,89 V** (gemessen). Die stabile Grenze am 5V-Pin liegt also bei ≈ 2,89 V.
+  - Einordnung: 3,0 V ist die untere Grenze der Versorgungsspannung laut ESP32-H2-Datenblatt (Tab. 4-2). Ich glaube es könnte so sein: Unterhalb davon reicht der LDO die Eingangsspannung nur noch abzüglich seines Spannungsabfalls durch, und bei den Funk-Spitzen (≈ 100–180 mA) fällt die Chipspannung unter die Brownout-Schwelle (Level 0 ≈ 2,57 V, Schätzwert laut IDF-Kconfig). Unter 2,74 V reicht es schon für den Start nicht mehr.
+  - Folge für Z8: Die geplante Abschaltschwelle von 3,2–3,3 V liegt 0,2–0,3 V über der gemessenen Grenze von 3,0 V. Mit dem echten Akku kommen noch Innenwiderstand und Schutzschaltung dazu, die bei den Spitzen zusätzlich Spannung kosten. Die Reserve deshalb mit dem echten Akku (Ampere Meter, S7) bestätigen.
 - **Arbeitsbereich Eingangsspannung (5V-Pin):** ca. 3,05 V bis **5,5 V** (Obergrenze RT9080; 6,5 V ist nur Absolute Maximum).
 - **Restkapazität unter 3,3 V** – kein Datenblatt nennt sie für die Ruhespannung. Verfügbare Anhaltspunkte, die sich nicht decken:
   - Panasonic NCR18650B, Entladekurve 0,2 C, 25 °C (**unter Last**, Werte aus der Kurve abgelesen): ca. 6–8 % der Kapazität (bis 2,5 V) liegen unter 3,3 V, ca. 1–2 % unter 3,0 V. Quelle: Datenblatt, gehostet bei [batteryjunction](https://files.batteryjunction.com/frontend/files/Panasonic-NCR18650B.pdf) und TI E2E (zwei übereinstimmende Kopien, nicht vom Hersteller selbst).
@@ -95,6 +139,7 @@ Begründung: Der ESP32-H2 läuft ab 3,0 V, und unterhalb ~3,3 V Akkuspannung gre
 - Entladeschlussspannung laut Datenblättern: Samsung INR18650-35E 2,65 V; Samsung 30Q, LG MJ1, Panasonic NCR18650B 2,5 V. 3,0 V nennt keines davon – das ist eine konservative eigene Wahl.
 - Ob ein Buck-Boost die Restkapazität sinnvoll nutzbar machen würde, hängt von dieser Restkapazität und dem Ruhestrom des Wandlers ab – [OFFEN]. Abschaltschwelle Z8 vorläufig ca. 3,2–3,3 V Ruhespannung (Hysterese, Messung bei LED aus), Festlegung nach Klärung.
 - ⚠️ **5V-Pin = VBUS** (direkt verbunden, siehe Schaltplan). Bei gestecktem USB und angeschlossenem Akku speist USB mit 5 V in den Akku zurück. Vor dem Flashen Akku abklemmen oder eine Schottky-/Ideal-Diode in die Akkuleitung setzen (kostet ~0,2–0,3 V Reserve).
+- **Versorgungspfad niederohmig verdrahten:** Der ESP32-H2 zieht beim Funk-Start kurze Spitzen von ≈ 100–180 mA (PPK2-Messung S10, [power-measurement.md](power-measurement.md#ablauf-s10-reboot-schleife)). Über ein billiges Steckbrett führte das unterhalb von 4,0 V zu einer Reboot-Schleife. Akku und 5V-Pin deshalb kurz und gelötet verbinden.
 - Nicht über den 3V3-Pin einspeisen, solange der ME6217 bestückt ist: Das Datenblatt verbietet VOUT > VIN + 0,3 V (Rückstrom über die parasitäre Diode des P-MOSFET).
 
 ## Prototyp (DEBUG-Build)
@@ -159,7 +204,48 @@ Akku+ ──[ 1 MΩ 1% ]──┬──[ 1 MΩ 1% ]── GND
 | Strommess-Chip (INA219/226) | Coulomb-Zählung braucht Kalibrierung und Bezug „voll“. Ruhestrom laut TI: INA219 0,7 mA typ. / 1 mA max. (Power-down 6 µA typ.), SBOS448G; INA226 330 µA typ. / 420 µA max. (Power-down 0,5 µA typ.), SBOS547C |
 | Z-Diode | Ich glaube es könnte so sein: nur als Schwellwertgeber brauchbar, Toleranz und Temperaturgang zu groß für eine Messung – nicht belegt |
 
-**Software-Regeln:** Messen bei LED aus (bzw. einige Sekunden nach Ausschalten), Mittelung über mehrere Samples, OCV-Lookup-Tabelle für %, Unterspannungsentscheidung erst nach mehreren Messungen in Folge, mit Hysterese. Messintervall 10–30 min, gebündelt mit ohnehin nötigen Wakeups, zusätzlich bei jedem LED-Schaltvorgang.
+**Software-Regeln:** Messen bei LED aus (bzw. einige Sekunden nach Ausschalten), Mittelung über mehrere Samples, OCV-Lookup-Tabelle für %, Unterspannungsentscheidung erst nach mehreren Messungen in Folge, mit Hysterese. Messintervall 10–30 min, gebündelt mit ohnehin nötigen Wakeups, zusätzlich bei jedem LED-Schaltvorgang. Umgesetzt sind Mittelung, Messung nur in Ruhe für den Ladestand und 15 min Intervall; die Messung bei jedem Schaltvorgang sowie Mehrfachmessung/Hysterese für Z8 fehlen noch.
+
+### Firmware-Umsetzung (Z7)
+
+Umgesetzt am 2026-11-08 in [battery.c](../main/battery/battery.c) (Messung) und [power_config_cluster.c](../main/clusters/power_config_cluster.c) (Attribute). Alle Werte in [battery_config.h](../main/battery/battery_config.h).
+
+```
+beim Start (LED noch aus) und alle BATTERY_MEASURE_INTERVAL_MS = 15 min:
+  ADC-Unit anlegen → 16 Samples, eFuse-kalibriert (Curve Fitting) → Mittelwert → Unit löschen
+  × Teilerverhältnis (R_TOP + R_BOTTOM) / R_BOTTOM × BATTERY_CAL_PERMILLE / 1000  → Akkuspannung mV
+  LED aus → Ladestand aus BATTERY_OCV_TABLE, geglättet (nur fallend, Anstieg erst ab +5 %)
+  LED an  → nur Spannung, Ladestand bleibt (Spannung unter Last ist zu niedrig)
+  → BatteryVoltage (100 mV) und BatteryPercentageRemaining (0,5 %)
+```
+
+- **ADC-Unit nur während der Messung:** Solange eine Oneshot-Unit existiert, hält der IDF-Treiber im Light Sleep die Power-Domänen TOP und MODEM eingeschaltet, wenn `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP` gesetzt ist (IDF 5.5.4 `components/esp_adc/adc_oneshot.c`, `adc_oneshot_new_unit()`/`adc_oneshot_del_unit()`). Deshalb wird sie für jede Messung angelegt und gelöscht.
+- **Pad GPIO 1:** nach Reset Eingang aus, hochohmig, ohne Pull (Datenblatt, IO-MUX-Tabelle, Reset-Wert 0). Der Treiber schaltet es als analog, ohne Pulls (`gpio_config_as_analog()`). Der Teiler wird also nicht durch einen internen Pull belastet.
+- **Messintervall:** Jede Messung weckt den Chip einmal. Die Messdauer (16 Samples) ist **[UNBELEGT]**, mit dem PPK2 messen (Ereignis alle 15 min im Aufbau M1).
+- **Ladestand-Tabelle ist ein Platzhalter [UNBELEGT]:** linear 3300 mV = 0 % bis 4200 mV = 100 %. Die echte Kurve ist in der Mitte flach (s. o.). Ersetzen durch Punkte aus der Entladekurve der verwendeten Zelle (Datenblatt oder eigene Messung).
+- **Auflösung in HA:** `BatteryVoltage` hat nur 100 mV Auflösung (ZCL). Intern rechnet die Firmware in mV.
+- **Speicherung:** Im Gerät nichts dauerhaft, nur die aktuellen Werte im RAM; nach einem Neustart wird neu gemessen. Die Historie hält Home Assistant. Wie oft Z2M Reports bekommt, bestimmt die Reporting-Konfiguration aus dem Interview **[UNBELEGT]**, am Gerät prüfen.
+
+### Kalibrierung
+
+Fehler ohne Kalibrierung (ungünstigster Fall): ADC ±46 mV Akku (Datenblatt Tab. 4-6, ATTEN3, ×2 Teiler) + Teiler 2 × 1 % ≈ ±42 mV bei 4,2 V (Rechnung) + Leckstrom des Pads am 500-kΩ-Knoten **[UNBELEGT]**. Diese Fehler wirken im Wesentlichen als Faktor; daher **Einpunkt-Kalibrierung pro Gerät** über `BATTERY_CAL_PERMILLE`:
+
+**Schritt-für-Schritt-Anleitung mit Rechenbeispiel: [README.md, „Akkumessung kalibrieren“](../README.md#akkumessung-kalibrieren).** Kurzfassung: Quelle am 5V-Pin (ohne USB), Log über UART-Adapter. Bei mehreren Spannungen U_Log mit dem Multimeter **direkt am 5V-Pin** vergleichen, `CAL_neu = CAL_alt × U_Multimeter / U_Log`, Ergebnisse mitteln.
+
+Bezugswert ist die Spannung am Pin, nicht die Einstellung der Quelle. Die Leitungen verlieren 0,1 V und mehr (siehe unten).
+
+**Ergebnis Prototyp (2026-11-08):** PPK2 als Source Meter am 5V-Pin, ohne USB, ohne LED-Pfad, Onboard-WS2812 aktiv (DEBUG). Fluke 179 direkt an 5V-Pin und GND des Boards. Der Fluke misst im 6-V-Bereich auf ±(0,09 % + 2 Digits) genau ([Fluke-Datenblatt 175/177/179](https://www.farnell.com/datasheets/2631819.pdf)), das sind ≈ ±5 mV.
+
+| PPK2 eingestellt | Fluke am 5V-Pin | ADC-Log (CAL 1000) | ADC / Fluke | CAL = 1000 × Fluke / ADC |
+|---|---|---|---|---|
+| 3000 mV | 2890 mV | 2928 mV | 1,0131 | 987 |
+| 3300 mV | 3170 mV | 3212 mV | 1,0132 | 987 |
+| 3500 mV | 3380 mV | 3426 mV | 1,0136 | 987 |
+| 4200 mV | 4070 mV | 4126 mV | 1,0138 | 986 |
+
+- Der ADC misst über den ganzen Bereich **gleichmäßig ≈ 1,35 % zu hoch**. Ein einziger Faktor genügt also, eine Zweipunkt-Kalibrierung ist nicht nötig. **`BATTERY_CAL_PERMILLE` = 987.** Rechnerische Restabweichung danach ≤ 3 mV, das liegt innerhalb der Fluke-Genauigkeit.
+- Eine frühere Einzelprüfung bei 3,7 V schien eine exakte Übereinstimmung zu zeigen. Ich glaube es könnte so sein: Dabei wurde der ADC-Wert mit der am PPK2 eingestellten Spannung verglichen statt mit der Spannung am 5V-Pin. Die liegt ≈ 0,12–0,13 V tiefer (siehe nächster Punkt), und das hebt den ADC-Fehler von +1,35 % (≈ 50 mV) nicht auf. Ungeklärt.
+- Zwischen PPK2-Einstellung und 5V-Pin fehlen bei Grundlast **120–130 mV**. Davon entfallen ≈ 23 mV auf den PPK2-Ausgang selbst (Messung in [power-measurement.md](power-measurement.md#ablauf-s10-reboot-schleife)). Der Rest liegt in Kabeln bzw. Steckbrett, das sind rechnerisch einige Ohm. Für Messungen mit Spannungsangaben deshalb immer die Spannung am 5V-Pin angeben, nicht die PPK2-Einstellung.
 
 ## GPIO-Belegung
 
@@ -169,11 +255,11 @@ Strapping-Pins laut Datenblatt: **nur GPIO 8, 9 und 25** – meiden. GPIO 13/14 
 
 | GPIO | Funktion | Status |
 |---|---|---|
-| 9 | Taster (BOOT), kurz = Toggle, lang = Pairing | [ZIEL] |
-| 10 | PWM → KSQ (LEDC), nur Produktiv-Build – `LIGHT_PWM_GPIO` | [VORSCHLAG], im Code hinterlegt |
+| 9 | Taster (BOOT), kurz = Toggle, ≥ 5 s = Factory Reset + Pairing – `BUTTON_GPIO` in [button.h](../main/button.h). Eingang mit internem Pull-up, Light-Sleep-Wakeup auf Low | im Code, am Gerät ungetestet |
+| 10 | PWM → CE der KSQ (LEDC), Produktiv- und DEBUG-Build – `LIGHT_PWM_GPIO` | [VORSCHLAG], im Code hinterlegt |
 | 11 | EN Boost-Wandler / Lastschalter, nur Produktiv-Build – `LIGHT_PWM_EN_GPIO` | [VORSCHLAG], im Code hinterlegt |
-| 1 (ADC1_CH0) | Akkuspannung über Spannungsteiler 1 MΩ/1 MΩ + 100 nF | [VORSCHLAG] |
-| 8 | **Nur DEBUG-Build:** Daten der Onboard-WS2812 (RMT), simuliert die Lichterkette – `LIGHT_WS2812_GPIO` in [light_config.h](../main/light/light_config.h). Im Produktiv-Build ungenutzt | [IST] |
+| 1 (ADC1_CH0) | Akkuspannung über Spannungsteiler 1 MΩ/1 MΩ + 100 nF – `BATTERY_ADC_GPIO` in [battery_config.h](../main/battery/battery_config.h). Im DEBUG-Build nur mit `CONFIG_ZL_DEBUG_BATTERY_ADC` | [VORSCHLAG], im Code hinterlegt |
+| 8 | **Nur DEBUG Level 1:** Daten der Onboard-WS2812 (RMT), zeigt den Zustand der Lichterkette – `LIGHT_WS2812_GPIO` in [light_config.h](../main/light/light_config.h). In Level 0 und 2 ungenutzt | [IST] |
 
 ## Grobe Laufzeitabschätzung (LED an)
 
@@ -183,14 +269,24 @@ Strapping-Pins laut Datenblatt: **nur GPIO 8, 9 und 25** – meiden. GPIO 13/14 
 |---|---|---|---|
 | Boost 5 V + lineare KSQ (≈ 54 %) | 0,3 / 0,54 ≈ 0,56 W | ≈ 20 h | ≈ 33 h |
 | Boost 3,7 V + lineare KSQ (≈ 73 %) | 0,3 / 0,73 ≈ 0,41 W | ≈ 27 h | ≈ 45 h |
+| Lineare KSQ direkt am Akku (ohne Boost) | ≈ 100 mA Akkustrom | 3.000 mAh / 100 mA ≈ 30 h | ≈ 50 h |
+
+**Vergleich Original-Timer mit 3× AA (Alkaline), 100 mA, 6 h/Tag** – aus Datenblatt-Diagrammen abgelesen (Ablesegenauigkeit grob ±10 %), Rechnung:
+- Energizer E91 ([Datenblatt](https://cdn.connectec.uk/Files/Products/Batteries/energizer_batteries/e91_aa_battery_datasheet.pdf), Form EBC-1102-R): 100 mA Dauerentladung bis 0,8 V ≈ 2.500 mAh; Kurve „Digital Audio 100 mA 1 hr/day“: 1,1 V nach ≈ 22–23 h, 1,0 V nach ≈ 24–25 h, 0,8 V nach ≈ 26 h.
+- Duracell MN1500 ([Datenblatt](https://www.ece.ucsb.edu/~ilan/Classes/ECE2A_F2010/Labs/Datasheets/Duracell%20AA%20MN1500%20LR6.pdf), 6/08): 100 mA, 1 h/Tag ≈ 2,7 Ah.
+- Drei Zellen in Reihe, die Kette braucht 2,9 V: Schon bei ca. 1,0–1,1 V pro Zelle (3,0–3,3 V gesamt) reicht die Spannung kaum noch für 100 mA. Die Kapazität bis 0,8 V ist also nicht nutzbar. Nutzbar sind etwa **22–25 h Leuchtdauer ≈ 4 Tage bei 6 h/Tag**. Bei 6 h am Stück statt 1 h/Tag eher weniger (weniger Erholung, [UNBELEGT] wie viel); Eigenverbrauch des Timers [UNBELEGT].
+- Zum Vergleich (Rechnung oben, ohne Boost): 18650 mit 3.000 mAh ≈ 30 h ≈ 5 Tage, mit 5.000 mAh ≈ 50 h ≈ 8 Tage bei 6 h/Tag.
+
+Die letzte Zeile der Tabelle rechnet mit Strom statt Leistung, weil bei linearer Regelung der Akkustrom gleich dem LED-Strom ist; Nennkapazität voll entnehmbar angenommen (bis zur Abschaltschwelle Z8 ist es weniger).
 
 Maßgeblich sind erst die Messwerte (siehe [power-measurement.md](power-measurement.md)). Im ausgeschalteten Zustand bestimmen Ruhestrom von Regler und abgeschaltetem Boost sowie ESP-Sleep + Zigbee-Polls die Laufzeit.
 
 ## Offene Punkte
 
-- [OFFEN] LED-Kette: Anzahl LEDs, Verschaltung (parallel?), eingebaute Vorwiderstände, ursprüngliche Versorgung (USB 5 V / 3×AA)?
+- [TEILWEISE] LED-Kette: ursprünglich 3× AA, gemessen 2,9 V / 100 mA (2026-11-08, siehe [Messung](#messung-led-kette-2026-11-08)). Offen: Messpunkt der Spannung, Batteriespannung dabei, Anzahl LEDs, Verschaltung, Vorwiderstände, regelt der Original-Timer?
+- [OFFEN] Boost weglassen, KSQ direkt am Akku? Hängt am Dropout der KSQ, siehe [Variante ohne Boost](#variante-ohne-boost-lineare-ksq-direkt-am-akku).
 - [OFFEN] Boost-Modul: Typ, EN-Pin vorhanden, Leerlaufstrom, Ausgangsspannung einstellbar?
-- [OFFEN] KSQ-Shield: Typ, linear oder getaktet, Dimm-/EN-Eingang (Logikpegel, max. PWM-Frequenz), Dropout.
+- [OFFEN] KSQ: Typ LD06AJSA mit CN5711 (Aufschrift geprüft), siehe [KSQ-Modul](#ksq-modul-ld06ajsa). Offen: Pull-up an CE auf dem Modul (Wert, entfernen?), Pull-down an CE.
 - [OFFEN] Rückspeiseschutz USB ↔ Akku am 5V-Pin: Akku beim Flashen abklemmen oder Diode?
 - [OFFEN] Ruhestrom nach Umbau messen (Soll ≈ 90 µA im Light Sleep) – Aufbau M2 in [power-measurement.md](power-measurement.md).
 - [OFFEN] 18650 mit Schutzschaltung? Ladeelektronik (z. B. TP4056)?

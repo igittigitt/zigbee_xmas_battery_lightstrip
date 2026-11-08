@@ -33,6 +33,14 @@ Aus dem Treiber-Quellcode, ESP-IDF v5.5.4, `components/esp_driver_ledc/src/ledc.
 
 Ich glaube es könnte so sein: Das gilt, solange LEDC konfiguriert ist, also auch bei ausgeschaltetem Licht. Die Option spart dann im Produktiv-Build (PWM-Backend) weniger als erhofft. Messen, siehe [known-issues.md](known-issues.md).
 
+## Akkumessung (Z7)
+
+Periodischer Wakeup der Anwendung neben dem Zigbee-Keepalive: `esp_timer` „battery“ alle 15 min (`BATTERY_MEASURE_INTERVAL_MS`, `skip_unhandled_events`). Die ADC-Unit existiert nur während der Messung, weil sie sonst im Light Sleep die Power-Domänen TOP und MODEM eingeschaltet hält (IDF 5.5.4 `esp_adc/adc_oneshot.c`). Details: [hardware.md](hardware.md#firmware-umsetzung-z7).
+
+## Restlaufzeit-Modell (Z14)
+
+Zweiter periodischer Wakeup: `esp_timer` „battery_model“ einmal pro Stunde (`BATTERY_MODEL_INTERVAL_MS`, `skip_unhandled_events`). Er setzt die Restlaufzeit-Attribute und speichert alle 6 h im NVS. Die Verbrauchszählung selbst weckt nicht, weil sie bei jeder Pegeländerung im Lichttask mitläuft. Ich glaube es könnte so sein: Gegenüber dem Keepalive alle 2 s (1.800 Wakeups pro Stunde) fällt ein Wakeup pro Stunde nicht ins Gewicht. Gemessen ist das nicht.
+
 ## Reaktionszeit (Ziel Z4) und Keepalive
 
 - Laut FAQ (2.0.5) bestimmt das Keepalive-Intervall, „how long the chip can remain in light sleep mode“. Einstellbar ist es über `keep_alive` beim Init (umgesetzt, `ZB_KEEP_ALIVE_MS`) oder über `ezb_nwk_set_keepalive_interval()`.
@@ -48,7 +56,12 @@ Ich glaube es könnte so sein: Das gilt, solange LEDC konfiguriert ist, also auc
 
 Ziel: am USB debuggen können und das Sleep-Verhalten trotzdem möglichst realistisch sehen.
 
-- `CONFIG_ZL_DEBUG=y` erzwingt per Kconfig-`select` **`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y`**.
+Die DEBUG-Stufen (siehe [setup-build.md](setup-build.md#debug-schalter)):
+
+- **Level 1:** Ein PM-Lock (`debug_awake`, [power_management.c](../main/power_management.c)) sperrt den Light Sleep immer, auch ohne USB.
+- **Level 2:** echter Light Sleep wie produktiv, Log über die UART-Konsole. Steckt trotzdem USB an einem Host und ist `USJ_NO_AUTO_LS_ON_CONNECTION` gesetzt, wird nur simuliert (Tabelle unten).
+
+- Level 1 erzwingt per Kconfig-`select` **`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y`**.
   - Der IDF-Treiber hält dann einen `ESP_PM_NO_LIGHT_SLEEP`-Lock, solange über USB SOF-Pakete vom Host kommen (`esp_driver_usb_serial_jtag/src/usb_serial_jtag_connection_monitor.c`).
   - Eine reine Powerbank zählt laut Header nicht als verbunden (`usb_serial_jtag.h`).
 - Hintergrund: Der USB-Serial/JTAG des ESP32-H2 unterstützt keinen Light Sleep. `SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP` ist für esp32h2 in `soc_caps.h` auskommentiert. Ohne den Lock bräche die Konsole ab.
@@ -60,7 +73,7 @@ Ziel: am USB debuggen können und das Sleep-Verhalten trotzdem möglichst realis
 | GPIOs mit `SleepSel=1` | Hardware schaltet auf Sleep-Konfiguration | **nicht nachgebildet**, dafür gibt es keine öffentliche API (`gpio_sleep_sel_en()`, `driver/gpio.h`). Stattdessen GPIO-Bericht im Log |
 | GPIOs mit `SleepSel=0` (Licht-Pins, `gpio_sleep_sel_dis`) | behalten Pegel | identisch |
 | LEDC `KEEP_ALIVE` / WS2812 | läuft weiter / hält Farbe | identisch |
-| Ohne USB-Verbindung (DEBUG) | – | **echter** Sleep |
+| Ohne USB-Verbindung | – | Level 1: kein Sleep (PM-Lock); Level 2: **echter** Sleep |
 
 **Log-Ausgaben** (Tag `POWER_MGMT`, einmalig beim Start aus `power_management_report()`):
 

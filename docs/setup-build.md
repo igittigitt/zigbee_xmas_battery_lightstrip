@@ -33,22 +33,30 @@ Konfiguration:
 
 ## DEBUG-Schalter
 
-`DEBUG` ist der zentrale Build-Schalter des Projekts: Kconfig-Option `CONFIG_ZL_DEBUG` (Menü **Zigbee Light**, definiert in [main/Kconfig.projbuild](../main/Kconfig.projbuild)), im C-Code als `APP_DEBUG` (immer 0 oder 1, [main/app_config.h](../main/app_config.h)).
+`DEBUG` ist der zentrale Build-Schalter des Projekts, mit drei Stufen: Kconfig-Auswahl **DEBUG level** (`CONFIG_ZL_DEBUG_LEVEL_0/1/2`, Menü **Zigbee Light**, definiert in [main/Kconfig.projbuild](../main/Kconfig.projbuild)). Im C-Code ([main/app_config.h](../main/app_config.h)):
 
-| | DEBUG (`CONFIG_ZL_DEBUG=y`) | Produktiv (`n`) |
-|---|---|---|
-| Aufbau | ESP32-H2-Zero am USB (Strom, Flash, Log) | Akku, umgebautes Board, LED-Pfad |
-| Lichterkette | Onboard-WS2812B-0807 an GPIO 8, warmweiß. Farbe und Byte-Reihenfolge stehen in `light_config.h`: Diese LED erwartet **R,G,B** (`LIGHT_WS2812_ORDER_RGB`), am Prototyp ermittelt | externer KSQ-Treiber: PWM GPIO 10, Boost-EN GPIO 11 |
-| Akkustand | **emuliert**: `CONFIG_ZL_DEBUG_BATTERY_PERCENT` (Default 95 %), *menuconfig → Zigbee Light* | `0xFF` (unbekannt) bis Z7 |
-| Light Sleep | **simuliert**, solange USB verbunden ist: CPU bleibt wach (`CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION`, per `select`), GPIO-Bericht beim Start. Details: [power-management.md](power-management.md#sleep-simulation-im-debug-build) | echt |
+- `APP_DEBUG_LEVEL`: 0, 1 oder 2.
+- `APP_DEBUG`: 1 bei Level 1 und 2 (abgeleitet aus `CONFIG_ZL_DEBUG`, das automatisch gesetzt wird).
+- `APP_DEBUG_LIGHT`: 1 nur bei Level 1 (Onboard-LED).
+- `APP_LIGHT_SLEEP`: 0 nur bei Level 1.
 
-Weitere Debug-Abweichungen ebenfalls an `APP_DEBUG` hängen und in diese Tabelle eintragen. Im Code bevorzugt `if (APP_DEBUG)` statt `#if`, damit beide Zweige kompiliert werden.
+| | Level 1: allgemeine Tests | Level 2: Energiespar-Tests | Level 0: Produktiv |
+|---|---|---|---|
+| Zweck | Funktionstests am USB, Energieverbrauch egal | Verhalten und Verbrauch wie produktiv, mit Diagnose | Endgerät |
+| Aufbau | ESP32-H2-Zero am USB (Strom, Flash, Log) | Akku bzw. PPK2, Log über UART-Adapter (GPIO 24), siehe [Log im Akkubetrieb](#log-im-akkubetrieb-ohne-usb) | Akku, umgebautes Board, LED-Pfad |
+| Lichterkette | Onboard-WS2812B-0807 an GPIO 8, warmweiß. Farbe und Byte-Reihenfolge stehen in `light_config.h`: Diese LED erwartet **R,G,B** (`LIGHT_WS2812_ORDER_RGB`), am Prototyp ermittelt. **Zusätzlich** wird parallel der PWM-Ausgang für die echte Lichterkette angesteuert (KSQ an GPIO 10, EN GPIO 11), Backend `light_driver_debug.c`; Rampe dort in Software-Stufen (20 ms) statt LEDC-Hardware-Fade | nur PWM wie produktiv; Onboard-LED bleibt aus (wird nicht initialisiert) | externer KSQ-Treiber: PWM GPIO 10, Boost-EN GPIO 11 |
+| Akkustand | **emuliert**: `CONFIG_ZL_DEBUG_BATTERY_PERCENT` (Default 95 %), *menuconfig → Zigbee Light*. Mit `CONFIG_ZL_DEBUG_BATTERY_ADC=y` wird stattdessen wie im Produktivbetrieb gemessen (nur mit angeschlossenem Teiler sinnvoll, z. B. zum Kalibrieren) | wie Level 1 | ADC-Messung an GPIO 1 (`APP_BATTERY_ADC`), siehe [hardware.md](hardware.md#firmware-umsetzung-z7) |
+| Light Sleep | **gesperrt** per PM-Lock. Außerdem `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` (per `select`). Details: [power-management.md](power-management.md#sleep-simulation-im-debug-build) | **echt**. USB Serial/JTAG fällt im Schlaf aus, daher UART-Konsole | echt |
+| Diagnose-Log | GPIO-Sleep-Bericht beim Start, TX-Leistung und Nachbartabelle nach dem Join, nach jedem gescheiterten Join/Rejoin Nachbartabelle + Beacon-Scan ([known-issues 1c](known-issues.md)) | wie Level 1 | nur Parent nach dem Join |
+
+Weitere Debug-Abweichungen an `APP_DEBUG` (beide Level) oder `APP_DEBUG_LEVEL` hängen und in diese Tabelle eintragen. Im Code bevorzugt `if (APP_DEBUG)` statt `#if`, damit beide Zweige kompiliert werden.
 
 Umschalten:
 
-- Aktuell steht `CONFIG_ZL_DEBUG=y` in [sdkconfig.defaults](../sdkconfig.defaults) (Prototyp-Phase).
-- Ein vorhandenes `sdkconfig` hat Vorrang vor den Defaults. Zum Umschalten daher `idf.py menuconfig` → *Zigbee Light* → *DEBUG mode*, oder `sdkconfig` löschen und die Defaults ändern.
-- Produktiv-Testbuild, ohne die lokale `sdkconfig` anzufassen (separates Build-Verzeichnis). `release.defaults` soll `CONFIG_ZL_DEBUG=n` enthalten; **die Datei fehlt noch im Repo**:
+- Aktuell steht `CONFIG_ZL_DEBUG_LEVEL_1=y` in [sdkconfig.defaults](../sdkconfig.defaults) (Prototyp-Phase).
+- Ein vorhandenes `sdkconfig` hat Vorrang vor den Defaults. Zum Umschalten daher `idf.py menuconfig` → *Zigbee Light* → *DEBUG level*, oder `sdkconfig` löschen und die Defaults ändern.
+- **Von Level 1 auf 2 nur per menuconfig oder mit neuem `sdkconfig`:** `USJ_NO_AUTO_LS_ON_CONNECTION` setzt nur Level 1 per `select`. Ein bestehendes `sdkconfig` behält den Wert aber unter Umständen auch nach dem Umschalten. Dann bleibt die CPU in Level 2 wach, solange USB verbunden ist. Das Log meldet das beim Start („light sleep is SIMULATED“). In Level 2 ohnehin kein USB anschließen.
+- Test-Build einer anderen Stufe, ohne die lokale `sdkconfig` anzufassen (separates Build-Verzeichnis). `release.defaults` soll `CONFIG_ZL_DEBUG_LEVEL_0=y` enthalten; **die Datei fehlt noch im Repo**:
   ```bash
   idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;release.defaults" build
   ```
@@ -87,12 +95,35 @@ Default-Level ist `INFO`, maximal `DEBUG` kompilierbar (`CONFIG_LOG_MAXIMUM_LEVE
 | `IDENTIFY_CLUSTER` | identify_cluster.c |
 | `POWER_CFG_CLUSTER` | power_config_cluster.c |
 | `ATTR_HANDLER` | attribute_handler.c |
+| `BATTERY` | battery/battery.c |
 | `POWER_MGMT` | power_management.c |
+| `BUTTON` | button.c |
 | `LIGHT` | light/light.c |
-| `LIGHT_WS2812` | light/light_driver_ws2812.c (DEBUG) |
-| `LIGHT_PWM` | light/light_driver_pwm.c (Produktiv) |
+| `LIGHT_WS2812` | light/light_driver_ws2812.c (DEBUG Level 1) |
+| `LIGHT_PWM` | light/light_driver_pwm.c (alle Stufen) |
+| `LIGHT_DEBUG` | light/light_driver_debug.c (DEBUG Level 1: WS2812 + PWM parallel) |
 
 Einzelne Tags lassen sich zur Laufzeit per `esp_log_level_set("TAG", ESP_LOG_DEBUG)` anpassen.
+
+## Log im Akkubetrieb (ohne USB)
+
+Am Akku darf kein USB-Kabel stecken (5V-Pin = VBUS, siehe [hardware.md](hardware.md#esp-regler)). Die Konsole läuft aber **primär über UART0** (`CONFIG_ESP_CONSOLE_UART_DEFAULT=y`, 115200 Baud) und nur sekundär über USB Serial/JTAG (`CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y`). Das Log liegt also immer auch an **GPIO 24 (U0TXD)** an (IDF `soc/esp32h2/include/soc/uart_pins.h`).
+
+Anschluss eines USB-UART-Adapters mit **3,3-V-Pegel**:
+
+```
+ESP GPIO 24 (TX) ──► RX des Adapters
+ESP GND          ──── GND des Adapters
+(VCC des Adapters NICHT verbinden, TX des Adapters nicht nötig)
+```
+
+- Nur RX + GND: Das Log ist reine Ausgabe, Eingaben braucht die Firmware nicht. Ich glaube es könnte so sein: Ohne Verbindung zum ESP-RX (GPIO 23) kann der Adapter das Board bei ausgeschaltetem Akku nicht über die Schutzdioden mitversorgen – nicht gemessen.
+- Kein 5-V-Adapter: Dessen RX-Eingang kann einen Pull-up auf 5 V haben, der dann an GPIO 24 läge.
+- Anzeigen: `idf.py -p COMx monitor` mit dem COM-Port des Adapters. DTR/RTS sind nicht angeschlossen, das Board wird also nicht zurückgesetzt.
+- **Light Sleep im DEBUG-Build:** In Level 1 sperrt ein PM-Lock den Schlaf auch am Akku. Für realistisches Verhalten am Akku **Level 2** verwenden (siehe [DEBUG-Schalter](#debug-schalter)). Die UART-Konsole verträgt Light Sleep: Vor dem Schlaf wartet IDF, bis die UART-Ausgabe gesendet ist (`flush_uarts()` in `esp_hw_support/sleep_modes.c`). USB Serial/JTAG funktioniert dagegen im und nach dem Light Sleep nicht (Kconfig-Hilfe `USJ_NO_AUTO_LS_ON_CONNECTION`).
+- **Strommessung:** Jede Log-Zeile hält die CPU wach, bis sie gesendet ist (115200 Baud ≈ 87 µs pro Zeichen, Rechnung: 10 Bit / 115200). Für Strommessungen das Log reduzieren, siehe [power-measurement.md](power-measurement.md#firmware-für-messungen-vorbereiten).
+
+Alternative: USB-Kabel mit unterbrochener VBUS-Ader (nur Daten). Das ist für den Akkubetrieb ungeeignet: Solange USB verbunden ist, verhindert `USJ_NO_AUTO_LS_ON_CONNECTION` den Light Sleep. Ohne diese Option bricht die USB-Konsole beim ersten Schlaf ab.
 
 ## Partitionstabelle
 

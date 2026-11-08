@@ -94,6 +94,6 @@ Zusätzliche IDF-Komponenten (z. B. `esp_adc`) unter `REQUIRES` ergänzen.
 
 ## Typische Erweiterungen für dieses Projekt
 
-- **Akkumessung (Z7):** ADC in [power_config_cluster.c](../main/clusters/power_config_cluster.c), Funktion `power_config_cluster_update()` mit Lock.
+- **Akkumessung (Z7):** umgesetzt, ADC in [battery.c](../main/battery/battery.c), Attribute in [power_config_cluster.c](../main/clusters/power_config_cluster.c). Für Z8 (Tiefentladeschutz) oder eine Messung nach dem Ausschalten der LED `power_config_cluster_update()` aus einem fremden Task aufrufen (holt selbst den Lock).
 - **Attribut zu einem Vorlagen-Cluster hinzufügen:** Beispiel `StartUpOnOff` in `on_off_cluster_add()`: `ezb_af_endpoint_get_cluster_desc()` → `ezb_zcl_<cluster>_cluster_desc_add_attr()`. Bei Bedarf `ezb_zcl_attr_desc_set_access(… | EZB_ZCL_ATTR_ACCESS_PERSISTENT)`, damit der Wert einen Neustart übersteht.
-- **Taster (Z5):** kurz → `on_off_cluster_set_state()`, lang → `zigbee_device_factory_reset()`, nach abgelaufenem Pairing-Fenster → `zigbee_device_start_pairing()`.
+- **Taster (Z5):** umgesetzt in [button.c](../main/button.c): kurz → `on_off_cluster_set_state()` (nur verbunden), ≥ 5 s → `zigbee_device_factory_reset()`.

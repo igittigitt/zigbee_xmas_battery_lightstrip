@@ -38,9 +38,64 @@ static int64_t s_pairing_deadline_us;
 static uint32_t s_rejoin_attempts;
 static uint32_t s_rejoin_delay_ms;
 
+/*
+ * DEBUG diagnostic scan (APP_DEBUG): while it runs, the next commissioning
+ * attempt is held back and scheduled from the end of the scan.
+ */
+static bool s_diag_scan_pending;
+static uint32_t s_diag_delay_ms;
+static unsigned s_diag_beacons;
+
 /* ---------------------------------------------------------------------------
- * Commissioning helpers (Zigbee task context unless noted)
+ * Diagnostics: neighbor table and beacons (Zigbee task context)
  * ------------------------------------------------------------------------- */
+
+static const char *relationship_str(uint8_t relationship)
+{
+    switch (relationship) {
+    case EZB_NWK_RELATIONSHIP_PARENT:  return "parent";
+    case EZB_NWK_RELATIONSHIP_CHILD:   return "child";
+    case EZB_NWK_RELATIONSHIP_SIBLING: return "sibling";
+    default:                           return "none";
+    }
+}
+
+static const char *device_type_str(uint8_t device_type)
+{
+    switch (device_type) {
+    case EZB_NWK_DEVICE_TYPE_COORDINATOR: return "coordinator";
+    case EZB_NWK_DEVICE_TYPE_ROUTER:      return "router";
+    case EZB_NWK_DEVICE_TYPE_END_DEVICE:  return "end device";
+    default:                              return "unknown";
+    }
+}
+
+/*
+ * Log the neighbor table (ezbee/nwk.h). Production: parent only. DEBUG: all
+ * entries, i.e. the candidates the stack knows for a (re)join. Whether the
+ * stack keeps scan results in this table after a failed attempt is not
+ * documented [UNBELEGT]; the log shows it. RSSI is omitted: the field read
+ * 127 in tests (known-issues 1c), LQI is meaningful.
+ */
+static void log_neighbors(const char *when)
+{
+    ezb_nwk_info_iterator_t it = EZB_NWK_INFO_ITERATOR_INIT;
+    ezb_nwk_neighbor_info_t nbr;
+    unsigned count = 0;
+
+    while (ezb_nwk_get_next_neighbor(&it, &nbr) == EZB_ERR_NONE) {
+        count++;
+        if (!APP_DEBUG && nbr.relationship != EZB_NWK_RELATIONSHIP_PARENT) {
+            continue;
+        }
+        ESP_LOGI(TAG, "%s: neighbor 0x%04hx (IEEE 0x%016llx) %s, %s, depth %u, LQI %u, outgoing cost %u", when,
+                 nbr.short_addr, (unsigned long long)nbr.ieee_addr.u64, device_type_str(nbr.device_type),
+                 relationship_str(nbr.relationship), nbr.depth, nbr.lqi, nbr.outgoing_cost);
+    }
+    if (APP_DEBUG) {
+        ESP_LOGI(TAG, "%s: %u neighbor(s)", when, count);
+    }
+}
 
 static void start_commissioning(ezb_bdb_comm_mode_mask_t mode)
 {
@@ -58,18 +113,80 @@ static void retry_timer_cb(void *arg)
     esp_zigbee_lock_release();
 }
 
-static void schedule_commissioning(ezb_bdb_comm_mode_mask_t mode, uint32_t delay_ms)
+static void start_retry_timer(uint32_t delay_ms)
 {
     esp_timer_stop(s_retry_timer);  // ESP_ERR_INVALID_STATE if not running: ignored
-    s_retry_mode = mode;
     esp_err_t err = esp_timer_start_once(s_retry_timer, (uint64_t)delay_ms * 1000);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Scheduling commissioning failed: %s", esp_err_to_name(err));
     }
 }
 
+/*
+ * Active scan callback (ezb_nwk_active_scan_callback_t). Called per beacon and
+ * with NULL at the end of the scan. Assumption (not documented for
+ * ezb_nwk_scan): it runs in the Zigbee task like the other stack callbacks.
+ * It only logs and starts an esp_timer, which is safe from any task.
+ */
+static void diag_scan_cb(ezb_nwk_active_scan_result_t *result, void *user_ctx)
+{
+    if (result != NULL) {
+        ezb_extpanid_t own;
+        ezb_nwk_get_extended_panid(&own);   // zero while factory new
+        bool own_network = own.u64 != 0 && own.u64 == result->extpanid.u64;
+        s_diag_beacons++;
+        ESP_LOGI(TAG, "Beacon from 0x%04hx: PAN 0x%04hx (EXT 0x%016llx%s), channel %u, permit join %d, "
+                      "end device capacity %d, router capacity %d, update ID %u",
+                 result->shortaddr, result->panid, (unsigned long long)result->extpanid.u64,
+                 own_network ? ", own network" : "", result->channel_number, result->permit_join,
+                 result->enddev_capacity, result->router_capacity, result->nwk_update_id);
+        return;
+    }
+    ESP_LOGI(TAG, "Diagnostic scan done: %u beacon(s)", s_diag_beacons);
+    log_neighbors("After scan");
+    if (s_diag_scan_pending) {     // cleared if a join or new pairing came first
+        s_diag_scan_pending = false;
+        start_retry_timer(s_diag_delay_ms);
+    }
+}
+
+/* DEBUG: start the diagnostic scan; the retry follows from its end. false = not started. */
+static bool diag_scan_start(uint32_t delay_ms)
+{
+    const ezb_nwk_scan_req_t req = {
+        .scan_type = EZB_NWK_SCAN_TYPE_ACTIVE,
+        .scan_duration = ZB_DIAG_SCAN_DURATION,
+        .scan_channels = ZB_PRIMARY_CHANNEL_MASK,
+        .active_scan_cb = diag_scan_cb,
+        .user_ctx = NULL,
+    };
+
+    log_neighbors("After failed attempt");
+    s_diag_beacons = 0;
+    ezb_err_t err = ezb_nwk_scan(&req);
+    if (err != EZB_ERR_NONE) {
+        ESP_LOGW(TAG, "Diagnostic scan not started: 0x%04x", err);
+        return false;
+    }
+    s_diag_delay_ms = delay_ms;
+    s_diag_scan_pending = true;
+    return true;
+}
+
+static void schedule_commissioning(ezb_bdb_comm_mode_mask_t mode, uint32_t delay_ms)
+{
+    esp_timer_stop(s_retry_timer);
+    s_diag_scan_pending = false;
+    s_retry_mode = mode;
+    if (APP_DEBUG && diag_scan_start(delay_ms)) {
+        return;
+    }
+    start_retry_timer(delay_ms);
+}
+
 static void cancel_scheduled_commissioning(void)
 {
+    s_diag_scan_pending = false;
     esp_timer_stop(s_retry_timer);
 }
 
@@ -117,18 +234,10 @@ static void rejoin_schedule(void)
     schedule_commissioning(EZB_BDB_MODE_INITIALIZATION, delay_ms);
 }
 
-/* Log the parent of the end device (diagnostics, neighbor table, ezbee/nwk.h). */
+/* Log the parent (DEBUG: whole neighbor table) and the TX power after joining. */
 static void log_parent(void)
 {
-    ezb_nwk_info_iterator_t it = EZB_NWK_INFO_ITERATOR_INIT;
-    ezb_nwk_neighbor_info_t nbr;
-
-    while (ezb_nwk_get_next_neighbor(&it, &nbr) == EZB_ERR_NONE) {
-        if (nbr.relationship == EZB_NWK_RELATIONSHIP_PARENT) {
-            ESP_LOGI(TAG, "Parent 0x%04hx (IEEE 0x%016llx), LQI %u, RSSI %d dBm", nbr.short_addr,
-                     (unsigned long long)nbr.ieee_addr.u64, nbr.lqi, nbr.rssi);
-        }
-    }
+    log_neighbors("Joined");
     if (APP_DEBUG) {
         // Diagnostics for docs/known-issues.md 1c: the IDF 802.15.4 driver
         // defaults to the maximum (ESP32-H2: 20 dBm); does the stack change it?
@@ -192,7 +301,7 @@ static bool zigbee_signal_handler(const ezb_app_signal_t *app_signal)
         if (status != EZB_BDB_STATUS_SUCCESS) {
             // Expected several times after a reboot (stack behaviour, known-issues 1c)
             ESP_LOGW(TAG, "%s failed (status 0x%02x)", ezb_app_signal_to_string(type), status);
-            status_indicator_check_timeout(on_off_cluster_get_state());
+            status_indicator_check_timeout();
             rejoin_schedule();
         } else if (ezb_bdb_is_factory_new()) {
             ESP_LOGI(TAG, "Factory new, no stored network");

@@ -22,12 +22,13 @@ Akkubetriebene, einfarbige LED-Lichterkette, die sich als **Zigbee-Licht** in **
 | Z6 | **Einschaltverhalten nach Neustart/Akkuwechsel** per Zigbee konfigurierbar (ZCL On/Off-Attribut `StartUpOnOff` 0x4003: 0x00 aus, 0x01 an, 0x02 toggle, 0xFF vorheriger Zustand – ZCL Rev. 8 §3.8.2.2.5; in Z2M als `power_on_behavior`, siehe zigbee-herdsman-converters `toZigbee.ts`/`fromZigbee.ts`). Default: aus | [FEST] |
 | Z13 | **Dimmen** per Level-Control-Cluster (`0x0008`, Gerätetyp Dimmable Light `0x0101`): Helligkeitsregler in HA, Helligkeitswechsel mit der Rampe aus Z3. Helligkeit nach Neustart über `StartUpCurrentLevel` (`0x4000`: 0x00 Minimum, 0x01–0xFE fester Wert, 0xFF vorherige Helligkeit), Default: vorherige. Aufgenommen am 2026-11-08 auf Wunsch des Nutzers (vorher „Zurückgestellt“, Variante a). Ob Dimmen Strom spart, ist erst mit PWM-Hardware messbar | [FEST] |
 | Z7 | **Akkuüberwachung**: Spannung und Ladestand an HA (Power Configuration Cluster) | [FEST] |
+| Z14 | **Restlaufzeit-Anzeige** in HA am Gerät (über Z2M External Converter): (a) Stunden, die das Licht mit der eingestellten Helligkeit noch leuchten kann, (b) Tage bei der bisherigen täglichen Nutzung (gleitender Mittelwert über 7 Tage). Methode: Verbrauchsmodell in der Firmware (Zeit × Strom je Helligkeit, Zähler im NVS, Rücksetzen beim Start mit vollem Akku, Aktualisierung stündlich). Unabhängig davon kommt der Ladestand in % weiter aus der Spannung (Z7). Die Ströme sind bis zur Messung Platzhalter, die Anzeige ist bis dahin **nicht belastbar**. Aufgenommen am 2026-11-08 auf Wunsch des Nutzers | [FEST] |
 | Z8 | **Tiefentladeschutz** in Software (Warnung → LED aus → Notschlaf), da der Buck-Boost bis 2,0 V weiterläuft | [FEST] |
 | Z9 | PWM-Erzeugung (LEDC) bei LED aus stoppen, keine unnötigen periodischen Wakeups | [FEST] |
 | Z10 | **Pairing-Modus mit Anzeige über die Lichterkette** (keine Onboard-LED). Siehe unten | [FEST] |
-| Z12 | **Verbindungsanzeige nach dem Neustart** (Gerät hat ein gespeichertes Netz, Rejoin): vom Boot bis zur Verbindung ist die Lichterkette aus und blitzt jede Sekunde kurz auf (~30 %, 50 ms). Nach erfolgreicher Verbindung leuchtet sie 2 s dauerhaft (~30 %), danach Zustand gemäß Z6 (liegt noch kein Zustand vor: aus). Geändert am 2026-11-08 auf Wunsch des Nutzers (vorher 100-ms-Blitz und 3× Blinken). Kommt keine Verbindung zustande, endet die Anzeige nach 3 min (eigene Wahl zum Akkuschutz); das Licht geht dann in den Zustand gemäß Z6, der Rejoin läuft still weiter. Beim Pairing (Z10) gilt weiter das Z10-Muster. Aufgenommen am 2026-11-07 auf Wunsch des Nutzers | [FEST] |
+| Z12 | **Verbindungsanzeige nach dem Neustart** (Gerät hat ein gespeichertes Netz, Rejoin): vom Boot bis zur Verbindung ist die Lichterkette aus und blitzt jede Sekunde kurz auf (~30 %, 50 ms). Nach erfolgreicher Verbindung leuchtet sie 2 s dauerhaft (~30 %), danach Zustand gemäß Z6 (liegt noch kein Zustand vor: aus). Geändert am 2026-11-08 auf Wunsch des Nutzers (vorher 100-ms-Blitz und 3× Blinken). Kommt keine Verbindung zustande, endet die Anzeige nach 3 min (eigene Wahl zum Akkuschutz); das Licht bleibt dann **aus**, bis ein Join gelungen ist (erst dann gilt Z6; geändert am 2026-11-08 auf Wunsch des Nutzers), der Rejoin läuft still weiter. Beim Pairing (Z10) gilt weiter das Z10-Muster. Aufgenommen am 2026-11-07 auf Wunsch des Nutzers | [FEST] |
 | Z11 | **Identify**: Auf einen Identify- oder TriggerEffect-Befehl (z. B. „Identify“ in Z2M) blinkt die Lichterkette 2 s lang mit 5 Hz (kurze Rampen wie Z10), danach gilt wieder der vorherige Zustand. Die vom Coordinator gewünschte IdentifyTime wird nicht verwendet. Aufgenommen am 2026-11-07 auf Wunsch des Nutzers | [FEST] |
-| Z11 | **Build-Schalter DEBUG** (Kconfig `CONFIG_ZL_DEBUG`, im Code `APP_DEBUG`): Prototyp am USB zum Flashen/Debuggen. Im DEBUG-Build übernimmt die Onboard-WS2812 die Rolle der Lichterkette; die Lichtsteuerung ist ein Treibermodul mit austauschbarem Backend (WS2812 ↔ externer PWM-LED-Treiber). Weitere Debug-Abweichungen werden über denselben Schalter gesteuert. Siehe [setup-build.md](setup-build.md#debug-schalter) | [FEST] |
+| Z11 | **Build-Schalter DEBUG level** (Kconfig `CONFIG_ZL_DEBUG_LEVEL_0/1/2`, im Code `APP_DEBUG_LEVEL`, `APP_DEBUG` = Level ≥ 1). 0 = produktiv. 1 = allgemeine Tests am USB ohne Rücksicht auf Energie: kein Light Sleep, Onboard-WS2812 zusätzlich zum PWM-Ausgang. 2 = Energiespar-Tests: wie produktiv (nur PWM, Onboard-LED aus, echter Light Sleep) plus Diagnose-Log, Überwachung nur über UART. Die Lichtsteuerung ist ein Treibermodul mit austauschbarem Backend. Weitere Debug-Abweichungen werden über denselben Schalter gesteuert. Drei Stufen statt Ein/Aus auf Wunsch des Nutzers (2026-11-08). Siehe [setup-build.md](setup-build.md#debug-schalter) | [FEST] |
 
 ### Z10 – Pairing-Modus
 
@@ -38,7 +39,7 @@ Akkubetriebene, einfarbige LED-Lichterkette, die sich als **Zigbee-Licht** in **
 | Timeout | **3 min**. Danach Steering beenden, LED aus, Gerät schläft bis zum nächsten Tastendruck (kurzer Druck startet Pairing erneut) |
 | Erfolg | Blinken stoppt, Lichterkette leuchtet 2 s dauerhaft (~30 %) als Bestätigung, danach Zustand gemäß Z6, ohne gespeicherten Zustand aus (geändert am 2026-11-08, vorher 2 langsame Pulse) |
 | Abbruch | Timeout oder Unterspannung (Z8) beendet den Pairing-Modus |
-| Anzeige-LED | Nur die Lichterkette – Onboard-LED des ESP wird **nicht** genutzt. Ausnahme DEBUG-Build (Z11): dort *ist* die Onboard-WS2812 die simulierte Lichterkette |
+| Anzeige-LED | Nur die Lichterkette – Onboard-LED des ESP wird **nicht** genutzt. Ausnahme DEBUG Level 1 (Z11): dort zeigt die Onboard-WS2812 zusätzlich den Zustand der Lichterkette |
 
 Werte (5 s, 2 Hz, 30 %, 3 min) sind Startwerte und als `#define` konfigurierbar.
 
@@ -50,7 +51,7 @@ Werte (5 s, 2 Hz, 30 %, 3 min) sind Startwerte und als `#define` konfigurierbar.
 | Zigbee-Router-Rolle | Router müssen dauerhaft empfangen – nicht batterietauglich |
 | Deep Sleep im Normalbetrieb | Zigbee nicht erreichbar, PWM aus, Rejoin teuer; nur als Notabschaltung bei Unterspannung |
 | Lichteffekte (Blinken, Pulsieren) per Zigbee | wecken die CPU permanent; nur internes Feedback (Pairing, Bestätigungen, Z10). Einzige Ausnahme: das zeitlich begrenzte Identify-Blinken (Z11, 2 s) |
-| Onboard-LED des ESP32-H2 (Produktivbetrieb) | Anzeige erfolgt ausschließlich über die Lichterkette; die WS2812 des ESP32-H2-Zero wird für das Produktivgerät ausgelötet. Nur im DEBUG-Build (Z11) dient sie als Ersatz für die Lichterkette |
+| Onboard-LED des ESP32-H2 (Produktivbetrieb) | Anzeige erfolgt ausschließlich über die Lichterkette; die WS2812 des ESP32-H2-Zero wird für das Produktivgerät ausgelötet. Nur in DEBUG Level 1 (Z11) zeigt sie zusätzlich den Zustand der Lichterkette |
 | Endloses Network Steering ohne Netz | leert den Akku; ersetzt durch Pairing-Modus mit Timeout (Z10) |
 | Farbe / adressierbare LEDs | Hardware ist einfarbig mit Konstantstromquelle |
 | Akkuladung durch das Gerät | externe Ladeelektronik |
@@ -66,9 +67,9 @@ Werte (5 s, 2 Hz, 30 %, 3 min) sind Startwerte und als `#define` konfigurierbar.
 
 ## Offene Punkte
 
-- [OFFEN] KSQ-Shield: Hat es einen Enable-/Dimm-Eingang? Welche PWM-Frequenz verträgt er? Wird er aus dem Akku oder aus 3,3 V gespeist?
+- KSQ-Shield: geklärt, LD06AJSA mit CN5711, PWM an CE < 2 kHz, siehe [hardware.md](hardware.md#ksq-modul-ld06ajsa). [OFFEN] bleibt der Pull-up an CE auf dem Modul.
 - [VORSCHLAG] Board: Waveshare ESP32-H2-Zero mit Umbau (WS2812 aus, Low-Iq-LDO statt ME6217), Akku am 5V-Pin – siehe [hardware.md](hardware.md#board-umbau-esp32-h2-zero).
-- [VORSCHLAG] Akkumessung an GPIO 1 (ADC1_CH0, kein Strapping-Pin), Schaltung siehe [hardware.md](hardware.md#akkumessung).
+- [VORSCHLAG] Akkumessung an GPIO 1 (ADC1_CH0, kein Strapping-Pin), Schaltung siehe [hardware.md](hardware.md#akkumessung). Firmware umgesetzt (2026-11-08), Hardware ungetestet.
 - [VORSCHLAG] PWM-Pin für die KSQ: GPIO 10 statt GPIO 8 (WS2812 + Strapping-Pin). GPIO 13/14 bleiben für einen optionalen 32-kHz-Quarz frei.
 - [GEKLÄRT] LEDC im Light Sleep (ESP-IDF v5.5.1, LEDC-Doku, Abschnitt Power Management): Default `LEDC_SLEEP_MODE_NO_ALIVE_NO_PD` = **kein PWM-Signal im Sleep**. Für LED an im Sleep: `LEDC_SLEEP_MODE_KEEP_ALIVE` + RC_FAST. Ein laufender Hardware-Fade läuft im Sleep weiter, „the target duty might not be reached exactly. It will adjust to the target duty after wake-up.“ Mehrverbrauch laut Doku vorhanden, Wert nicht angegeben → messen.
 - [OFFEN] Ziel-Laufzeit konkret beziffern (z. B. Saison Nov–Jan, X h/Tag an).

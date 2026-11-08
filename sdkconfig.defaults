@@ -25,7 +25,7 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 
-# Project: primary build switch DEBUG (main/Kconfig.projbuild)
-# y = prototype on USB, on-board WS2812 simulates the light chain
-# n = production, external PWM LED driver
-CONFIG_ZL_DEBUG=y
+# Project: primary build switch DEBUG level (main/Kconfig.projbuild)
+# 0 = production, 1 = general tests on USB (no light sleep),
+# 2 = energy saving tests (real light sleep, UART console)
+CONFIG_ZL_DEBUG_LEVEL_1=y

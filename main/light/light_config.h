@@ -80,8 +80,8 @@
 #define LIGHT_PWM_EN_GPIO               GPIO_NUM_11
 
 /**
- * PWM frequency. [OFFEN] Depends on the (not yet known) dimming input of the
- * LED driver, see docs/goals.md "Offene Punkte". 1 kHz is a placeholder.
+ * PWM frequency. LED driver is a CN5711 (LD06AJSA module): PWM on CE must be
+ * below 2 kHz (CN5711 datasheet REV 1.1, p. 6, docs/hardware.md).
  */
 #define LIGHT_PWM_FREQ_HZ               1000
 
@@ -92,6 +92,17 @@
  * 2^12 * 1 kHz = 4.1 MHz < 8.5 MHz.
  */
 #define LIGHT_PWM_DUTY_RESOLUTION       LEDC_TIMER_12_BIT
+
+/**
+ * Wait time after ledc_stop() before the LEDC timer is paused: two PWM
+ * periods (rounded up), so the stop/idle-level update is applied by the
+ * hardware before the timer stops. Without it, GPIO 10 stayed high after
+ * "off" on the prototype (2026-11-08, CE of the LED driver on GPIO 10 lit,
+ * on the plain GPIO 11 it worked); with this wait it works (confirmed on the
+ * prototype, 2026-11-08). Assumed mechanism: low-speed LEDC applies channel
+ * updates only at the next timer overflow [UNBELEGT, not found in the IDF docs].
+ */
+#define LIGHT_PWM_STOP_LATCH_MS         ((2 * 1000 + LIGHT_PWM_FREQ_HZ - 1) / LIGHT_PWM_FREQ_HZ)
 
 /**
  * Wait time after enabling the boost converter before the PWM ramp starts.

@@ -4,25 +4,32 @@ idf_component_register(
         "zigbee_device.c"
         "power_management.c"
         "status_indicator.c"
+        "button.c"
         "clusters/cluster_manager.c"
         "clusters/on_off_cluster.c"
         "clusters/level_cluster.c"
         "clusters/identify_cluster.c"
         "clusters/power_config_cluster.c"
+        "clusters/battery_runtime_cluster.c"
         "handlers/attribute_handler.c"
+        "battery/battery.c"
         "light/light.c"
         "light/light_driver_ws2812.c"
         "light/light_driver_pwm.c"
+        "light/light_driver_debug.c"
+        "battery/battery_model.c"
     INCLUDE_DIRS
         "."
         "clusters"
         "handlers"
         "light"
+        "battery"
     REQUIRES
         nvs_flash
         esp_timer
         esp_pm
         esp_driver_gpio
+        esp_adc
         esp_driver_ledc
         esp_driver_rmt
         esp_driver_usb_serial_jtag

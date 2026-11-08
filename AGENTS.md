@@ -39,11 +39,16 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/zigbee_device.c` | Stack-Init, Commissioning (Pairing-Fenster, Rejoin-Backoff), Signal-Handler; API `zigbee_device_start_pairing/_factory_reset/_is_joined` |
 | `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „Dimmable Light“ + Zusatzcluster und registriert ihn |
 | `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `level` ↔ Helligkeit, `identify`, `power_config` Akku) |
+| `main/battery/battery_model.c` | Verbrauchsmodell für die Restlaufzeit (Z14): Zählung bei jeder Pegeländerung (`battery_model_set_load` aus `light.c`), stündlicher Timer, Zähler im NVS. Ströme in `battery_config.h` sind Platzhalter |
+| `main/clusters/battery_runtime_cluster.c` | Herstellerspezifischer Cluster `0xFC00` (RemainingOnTime, RemainingDays) |
+| `z2m/zl-lightchain.mjs` | Zigbee2MQTT External Converter (nötig, damit die Restlaufzeit in HA erscheint) |
+| `main/battery/battery.c` | Akkuspannung per ADC (Unit nur während der Messung, wegen Sleep-Power-Domänen), Ruhespannung → %; Konstanten in `battery_config.h` |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |
+| `main/button.c` | BOOT-Taster GPIO 9 (Z5): kurz = Toggle (nur verbunden), ≥ 5 s = Factory Reset + Pairing; immer aktiv, weckt aus Light Sleep |
 | `main/power_management.c` | `esp_pm` (automatischer Light Sleep), DEBUG-Sleep-Bericht |
-| `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG** (`CONFIG_ZL_DEBUG` → `APP_DEBUG` 0/1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
+| `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG level** 0/1/2 (`CONFIG_ZL_DEBUG_LEVEL_x` → `APP_DEBUG_LEVEL`, `APP_DEBUG` = Level ≥ 1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
 | `main/light/light.c` | Lichtsteuerung: Task, Rampen, API `light_set_on`/`light_fade_to` (nicht blockierend) |
-| `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `ws2812` (DEBUG, Onboard-LED), `pwm` (Produktiv, LEDC + Boost-EN) |
+| `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `pwm` (Produktiv, LEDC + Boost-EN), `debug` (DEBUG: `ws2812` Onboard-LED + `pwm` parallel) |
 ## Konventionen
 
 - Neue Cluster nach dem Muster in [docs/extending.md](docs/extending.md): `<name>_cluster.[ch]` in `main/clusters/`, Funktionen `<name>_cluster_add/_update/_attribute_changed`, Registrierung in `cluster_manager.c`, Routing in `attribute_handler.c`, Quelle in `main/CMakeLists.txt` eintragen.

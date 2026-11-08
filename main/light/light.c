@@ -4,6 +4,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "app_config.h"
+#include "battery_model.h"
 #include "light.h"
 #include "light_config.h"
 #include "light_driver.h"
@@ -33,6 +34,15 @@ static esp_err_t light_power(bool on)
     return s_drv->power ? s_drv->power(on) : ESP_OK;
 }
 
+/** Set the output level and book the change in the battery model (goal Z14). */
+static void light_output(uint8_t level)
+{
+    if (s_drv->set_level(level) == ESP_OK) {
+        s_level = level;
+        battery_model_set_load(level);
+    }
+}
+
 static bool light_cmd_pending(void)
 {
     return uxQueueMessagesWaiting(s_queue) > 0;
@@ -52,14 +62,10 @@ static void light_software_ramp(uint8_t target, uint32_t duration_ms)
             return;
         }
         uint8_t level = (uint8_t)(start + ((int32_t)target - start) * (int32_t)i / (int32_t)steps);
-        if (s_drv->set_level(level) == ESP_OK) {
-            s_level = level;
-        }
+        light_output(level);
         vTaskDelay(pdMS_TO_TICKS(LIGHT_SW_RAMP_STEP_MS));
     }
-    if (s_drv->set_level(target) == ESP_OK) {
-        s_level = target;
-    }
+    light_output(target);
 }
 
 /** Move the output to level; ramp_ms refers to a full 0 <-> max transition. */
@@ -81,13 +87,12 @@ static void light_apply_level(uint8_t level, uint32_t ramp_ms)
     uint32_t duration_ms = ramp_ms * (uint32_t)abs((int)level - (int)s_level) / LIGHT_LEVEL_MAX;
 
     if (duration_ms == 0) {
-        if (s_drv->set_level(level) == ESP_OK) {
-            s_level = level;
-        }
+        light_output(level);
     } else if (s_drv->fade) {
         esp_err_t err = s_drv->fade(level, duration_ms);
         if (err == ESP_OK) {
             s_level = level;
+            battery_model_set_load(level);  // booked from the fade start (ramp <= LIGHT_RAMP_MS)
         } else {
             ESP_LOGE(TAG, "Fade failed: %s", esp_err_to_name(err));
         }
@@ -152,7 +157,7 @@ esp_err_t light_init(void)
         return ESP_OK;
     }
 
-    s_drv = APP_DEBUG ? &light_driver_ws2812 : &light_driver_pwm;
+    s_drv = APP_DEBUG_LIGHT ? &light_driver_debug : &light_driver_pwm;
 
     esp_err_t err = s_drv->init();
     if (err != ESP_OK) {
@@ -172,7 +177,7 @@ esp_err_t light_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Light initialised, backend: %s (DEBUG=%d)", s_drv->name, APP_DEBUG);
+    ESP_LOGI(TAG, "Light initialised, backend: %s (DEBUG level %d)", s_drv->name, APP_DEBUG_LEVEL);
     return ESP_OK;
 }
 
@@ -244,6 +249,11 @@ esp_err_t light_pattern_then(const light_pattern_t *pattern, bool on)
 uint8_t light_get_level(void)
 {
     return s_target;
+}
+
+uint8_t light_get_on_level(void)
+{
+    return s_on_level;
 }
 
 uint64_t light_get_gpio_mask(void)

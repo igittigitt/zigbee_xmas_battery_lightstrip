@@ -27,7 +27,8 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 | Scenes | `0x0005` | ZHA-Vorlage | Verwaltet der Stack |
 | On/Off | `0x0006` | ZHA-Vorlage + Erweiterung | `OnOff` → Licht-Modul (Rampe, Z3). Zusätzlich `StartUpOnOff` (`0x4003`, Default `ZB_START_UP_ON_OFF_DEFAULT` = aus, Z6, in Z2M `power_on_behavior`). `OnOff` und `StartUpOnOff` sind persistent ([on_off_cluster.c](../main/clusters/on_off_cluster.c)) |
 | Level Control | `0x0008` | ZHA-Vorlage + Erweiterung | Die Befehle (MoveToLevel, Move, Step, Stop, jeweils auch WithOnOff) verarbeitet der Stack. Jede Änderung von `CurrentLevel` meldet er per `SET_ATTR_VALUE`, wie im 2.0.5-Beispiel `color_dimmable_light`. `CurrentLevel` 0x00–0xFE wird auf die Ein-Helligkeit 1–255 des Licht-Moduls abgebildet (`light_set_on_level()`, Rampe Z3). Ist das Licht aus, wird die Helligkeit nur gespeichert. Zusätzlich `StartUpCurrentLevel` (`0x4000`, Default `ZB_START_UP_CURRENT_LEVEL_DEFAULT` = 0xFF vorherige, Z13). `CurrentLevel` und `StartUpCurrentLevel` sind persistent ([level_cluster.c](../main/clusters/level_cluster.c)) |
-| Power Configuration | `0x0001` | [power_config_cluster.c](../main/clusters/power_config_cluster.c) | `BatteryVoltage` und `BatteryPercentageRemaining` = `0xFF` (ungültig/unbekannt), bis die Akkumessung (Z7) umgesetzt ist. **DEBUG-Build:** `BatteryPercentageRemaining` = `CONFIG_ZL_DEBUG_BATTERY_PERCENT` × 2 (Default 95 % → 190), einstellbar per `menuconfig` → *Zigbee Light* |
+| Power Configuration | `0x0001` | [power_config_cluster.c](../main/clusters/power_config_cluster.c) | `BatteryVoltage` (100 mV) und `BatteryPercentageRemaining` (0,5 %) aus der Akkumessung (Z7, [battery.c](../main/battery/battery.c)): beim Start und alle 15 min, Ladestand nur bei LED aus und geglättet. Beide Attribute sind meldefähig (`EZB_ZCL_ATTR_ACCESS_REPORTING`). Schlägt die Messung fehl: `0xFF` (ungültig/unbekannt). **DEBUG-Build** ohne `CONFIG_ZL_DEBUG_BATTERY_ADC`: `BatteryPercentageRemaining` = `CONFIG_ZL_DEBUG_BATTERY_PERCENT` × 2 (Default 95 % → 190), `BatteryVoltage` = `0xFF`. Details: [hardware.md](hardware.md#firmware-umsetzung-z7) |
+| Restlaufzeit (herstellerspezifisch) | `0xFC00` | [battery_runtime_cluster.c](../main/clusters/battery_runtime_cluster.c) | Eigener Cluster (`ezb_zcl_custom_create_cluster_desc`, `ezbee/zcl/cluster/custom.h`), Attribute ohne Herstellercode, nur lesbar und meldefähig. `0x0000` RemainingOnTime (uint16, 0,1 h): wie lange das Licht mit der aktuellen Ein-Helligkeit noch leuchten kann. `0x0001` RemainingDays (uint16, 0,1 d): Tage bei der durchschnittlichen Nutzung der letzten 7 Tage. `0xFFFF` = unbekannt, die Tage sind das bis zum ersten vollen Tag Laufzeit. Quelle ist das Verbrauchsmodell (Z14, [battery_model.c](../main/battery/battery_model.c)), Aktualisierung stündlich. Die Ströme sind Platzhalter, die Werte also Schätzungen. Z2M zeigt den Cluster nur mit dem External Converter an (siehe unten) |
 
 ### Einschaltverhalten (Z6)
 
@@ -84,12 +85,11 @@ PARENT_LOST ──► Rejoin-Backoff (BDB INITIALIZATION, 1 s … 5 min, verdopp
 LEAVE (Reset, z. B. "Remove" in Z2M) ──► Pairing-Fenster
 ```
 
-- **Pairing-Fenster** (Ziel Z10): Netzsuche für `ZB_PAIRING_TIMEOUT_MS` = 3 min. Bis dahin wird nach jedem Fehlversuch nach `ZB_STEERING_RETRY_MS` = 1 s erneut gesucht. Danach sucht das Gerät nicht mehr, weil Steering ohne Netz den Akku leert (goals.md, Out of Scope „Endloses Network Steering“). `zigbee_device_start_pairing()` öffnet ein neues Fenster; das ist für den Taster (Z5) vorgesehen.
+- **Pairing-Fenster** (Ziel Z10): Netzsuche für `ZB_PAIRING_TIMEOUT_MS` = 3 min. Bis dahin wird nach jedem Fehlversuch nach `ZB_STEERING_RETRY_MS` = 1 s erneut gesucht. Danach sucht das Gerät nicht mehr, weil Steering ohne Netz den Akku leert (goals.md, Out of Scope „Endloses Network Steering“). Ein neues Fenster öffnet der lange Tastendruck (Z5, Factory Reset); `zigbee_device_start_pairing()` steht zusätzlich als API bereit.
 - **Rejoin-Backoff:** Beim Neustart mit gespeichertem Netz, bei Fehlern in der BDB-Initialisierung und bei `PARENT_LOST` startet erneut `EZB_BDB_MODE_INITIALIZATION`, im Abstand von 1 s, 2 s, 4 s … bis höchstens 5 min, ohne Zeitlimit.
   - Die Werte `ZB_REJOIN_RETRY_MIN_MS`/`_MAX_MS` sind **eigene Wahl**, nicht aus einer Quelle.
   - Dass BDB INITIALIZATION die richtige Reaktion auf `PARENT_LOST` ist, ist nicht dokumentiert. Grundlage ist der Eintrag in den 2.0.5-Release-Notes: „Extended BDB initialization process to try secure rejoin and TC rejoin on all the network channel“. Auf Hardware prüfen.
-- **Factory Reset:** `zigbee_device_factory_reset()` löscht die Zigbee-Daten und startet neu (`esp_zigbee_factory_reset()`). Danach öffnet sich das Pairing-Fenster. Vorgesehen für den langen Tastendruck (Z5).
-- Visuelle Anzeige des Pairing-Modus (Z10) und Taster (Z5) sind **noch nicht** umgesetzt.
+- **Factory Reset:** `zigbee_device_factory_reset()` löscht die Zigbee-Daten und startet neu (`esp_zigbee_factory_reset()`). Danach öffnet sich das Pairing-Fenster. Ausgelöst durch den langen Tastendruck (Z5, [button.c](../main/button.c)), in jedem Zustand – auch während eines endlosen Rejoins.
 
 ## Eingehende Aktionen
 
@@ -114,7 +114,38 @@ Coordinator: Z-Stack 3.x.0 auf SLZB-06P10.
 2. In Z2M „Permit join“ aktivieren und das Gerät starten. Das Pairing-Fenster ist 3 min offen.
 3. Das Gerät meldet sich als `zigbee-light` / `ZL-LightChain`.
 
-Für diese Kennung gibt es keinen offiziellen Z2M-Converter. Z2M führt das Gerät deshalb als „unsupported“. Ich glaube es könnte so sein: Z2M erzeugt aus den Clustern trotzdem automatisch die Exposes `state` und `battery`. Prüfen, wenn das Gerät gepairt ist. Für ein sauberes Gerät kann ein [External Converter](https://www.zigbee2mqtt.io/advanced/support-new-devices/01_support_new_devices.html) angelegt werden.
+Für diese Kennung gibt es keinen offiziellen Z2M-Converter. Ohne eigenen Converter zeigt Z2M „Generated support“ („Automatically generated definition“). Dann erscheinen nur Licht, Identify, Effect und Akku-%. Spannung und Restlaufzeit (Cluster `0xFC00`) fehlen (am Gerät beobachtet am 2026-11-08).
+
+### Z2M External Converter
+
+Der Converter liegt im Repo unter [z2m/zl-lightchain.mjs](../z2m/zl-lightchain.mjs). Er stellt bereit: Licht (An/Aus, Helligkeit, Einschaltverhalten), Identify, Akku (% und Spannung) sowie die Sensoren `remaining_light_hours` (h) und `remaining_days` (d). In HA erscheinen sie als Entitäten beim Gerät.
+
+Installation laut [Z2M-Doku „External converters“](https://www.zigbee2mqtt.io/advanced/more/external_converters.html):
+1. Die Datei in den Ordner `external_converters` legen. Er liegt neben der `configuration.yaml` von Z2M.
+2. Ab Z2M 2.11.0 sind External Converter in neuen Installationen standardmäßig aus. In dem Fall `advanced.enable_external_js` aktivieren.
+3. Z2M neu starten. Danach das Gerät **neu interviewen** (die Clusterliste hat sich geändert) und „Reconfigure“ ausführen, damit Z2M das Reporting einrichtet. Das Gerät muss dabei wach sein, z. B. kurz nach einem Neustart.
+
+Schritt-für-Schritt-Anleitung für Anwender: [README.md](../README.md#einrichtung-in-zigbee2mqtt--home-assistant).
+
+**Am Gerät bestätigt (2026-11-08, Z2M als HA-Add-on):**
+- Der Ordner `external_converters` existierte nicht und musste angelegt werden. `external_extensions` ist ein anderer Mechanismus.
+- `advanced.enable_external_js: true` war nötig.
+- Log nach dem Neustart: `Loaded external converter 'zl-lightchain.mjs'.` Vorher (debug): `External JS folder 'external_converters' is outside the Z2M install dir, creating a symlink to 'node_modules'`.
+- Danach zeigt Z2M „External support“. Unter *Exposes* stehen Battery, Voltage, „Restlaufzeit Licht an“ und „Restlaufzeit“. Der Converter wird also ohne Fehler geladen, auch mit `deviceAddCustomCluster` und `numeric()` mit `cluster`/`attribute`.
+- Vor „Reconfigure“ zeigten Voltage und beide Restlaufzeiten `N/A`. Ob danach die Werte ankommen und richtig skaliert sind, ist noch offen.
+
+Grundlage der Converter-Funktionen ist `src/lib/modernExtend.ts` von zigbee-herdsman-converters (Branch master, gelesen am 2026-11-08). Daraus belegt sind `deviceAddCustomCluster`, die Optionen von `battery()`, `light()` und `identify()` sowie das Format von `reporting` (`min`/`max`/`change`, Zeitangaben wie `"1_HOUR"`). Nur aus einer Zusammenfassung des Quelltexts stammen und sind deshalb **[UNBELEGT]**:
+- die Feldnamen `cluster`/`attribute` von `numeric()` (Laden und Exposes am 2026-11-08 bestätigt, Werte noch nicht),
+- dass `scale: 10` den Rohwert durch 10 teilt,
+- dass `numeric()` den Wert `0xFFFF` nicht ausfiltert. Unbekannte Tage würden dann als 6553,5 d erscheinen.
+
+Prüfen, wenn das Gerät gepairt ist.
+
+**Akku-Reporting** (`battery()` in modernExtend.ts, verbatim gelesen am 2026-11-08):
+- Standard ist `{min: "1_HOUR", max: "MAX", change: 10}` mit `MAX` = 65000 s. Für `batteryVoltage` (Einheit 100 mV) bedeutet `change: 10` 1,0 V, die Spannung käme also praktisch nur alle ~18 h. Der Converter setzt deshalb eigene Werte: min 1 h, max 4 h, Änderung 100 mV bzw. 1 % (`change: 2`, Einheit 0,5 %). Eigene Wahl; die Funkkosten eines Reports sind nicht gemessen.
+- Beim Configure (Interview/„Reconfigure“) liest Z2M beide Attribute einmal (`setupAttributes` mit `read`). Lesefehler verschluckt Z2M still (nur Debug-Log `Reading attribute failed`). Werte `0xFF` verwirft der Converter (`< 255`).
+- Manuell lesen: in Z2M unter *Exposes* beim Akku auf „Refresh“ klicken (`convertGet` liest `batteryPercentageRemaining` und `batteryVoltage`).
+- In HA sind `battery` und `voltage` Diagnose-Entitäten (`withCategory("diagnostic")`), auf der Geräteseite im Abschnitt „Diagnose“.
 
 ### Gerät neu anlernen
 

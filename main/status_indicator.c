@@ -64,11 +64,12 @@ void status_indicator_stop(bool on)
     light_set_on(on);
 }
 
-void status_indicator_check_timeout(bool on)
+void status_indicator_check_timeout(void)
 {
     if (s_state == IND_SEARCHING &&
         esp_timer_get_time() - s_search_start_us >= (int64_t)IND_SEARCH_TIMEOUT_MS * 1000) {
-        ESP_LOGW(TAG, "No connection after %d s", IND_SEARCH_TIMEOUT_MS / 1000);
-        status_indicator_stop(on);
+        ESP_LOGW(TAG, "No connection after %d s, light stays off until joined", IND_SEARCH_TIMEOUT_MS / 1000);
+        // Z12: the StartUpOnOff state is only applied after a successful join
+        status_indicator_stop(false);
     }
 }

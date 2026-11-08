@@ -21,8 +21,8 @@
 #define IND_SEARCH_OFF_MS           950
 
 /**
- * Z12: stop the search indication after this time without connection and show
- * the StartUpOnOff state (own choice to protect the battery; rejoin continues).
+ * Z12: stop the search indication after this time without connection, light
+ * off until joined (own choice to protect the battery; rejoin continues).
  */
 #define IND_SEARCH_TIMEOUT_MS       (3 * 60 * 1000)
 
@@ -69,12 +69,12 @@ void status_indicator_connected(bool on);
 void status_indicator_stop(bool on);
 
 /**
- * @brief End the search indication after IND_SEARCH_TIMEOUT_MS.
+ * @brief End the search indication after IND_SEARCH_TIMEOUT_MS, light off.
  *
+ * The light stays off until the next successful join; only then
+ * status_indicator_connected() applies the StartUpOnOff state (Z12).
  * Call on every failed rejoin attempt; no timer of its own (no extra wake-ups).
- *
- * @param on Light state afterwards
  */
-void status_indicator_check_timeout(bool on);
+void status_indicator_check_timeout(void);
 
 #endif // STATUS_INDICATOR_H

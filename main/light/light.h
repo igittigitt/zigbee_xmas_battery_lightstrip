@@ -8,8 +8,8 @@
 /**
  * @brief Initialise the light module and its hardware backend.
  *
- * The backend is selected by the DEBUG switch (APP_DEBUG, app_config.h):
- * DEBUG = on-board WS2812, otherwise external PWM LED driver.
+ * The backend is selected by the DEBUG level (APP_DEBUG_LIGHT, app_config.h):
+ * level 1 = on-board WS2812 + PWM output, otherwise external PWM LED driver only.
  * Starts the light task. The light is off afterwards.
  *
  * @return ESP_OK on success
@@ -91,6 +91,11 @@ esp_err_t light_pattern_then(const light_pattern_t *pattern, bool on);
  * @brief Last requested target level (not the momentary ramp value).
  */
 uint8_t light_get_level(void);
+
+/**
+ * @brief Level used for "on" (light_set_on_level(), default LIGHT_LEVEL_ON).
+ */
+uint8_t light_get_on_level(void);
 
 /**
  * @brief Bit mask of the GPIOs used by the active backend (0 before init).

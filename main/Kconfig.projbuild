@@ -1,48 +1,63 @@
 menu "Zigbee Light"
 
-    config ZL_DEBUG
-        bool "DEBUG mode (prototype on USB)"
-        default n
-        # Keep the CPU awake while USB is connected, so flashing and the
-        # console keep working. Light sleep is then only simulated,
-        # see power_management.c.
-        select USJ_NO_AUTO_LS_ON_CONNECTION
+    choice ZL_DEBUG_LEVEL_CHOICE
+        prompt "DEBUG level"
+        default ZL_DEBUG_LEVEL_0
         help
-            Primary build switch of this project.
+            Primary build switch of this project (C macros APP_DEBUG and
+            APP_DEBUG_LEVEL in app_config.h).
 
-            y = DEBUG / prototype: ESP32-H2 board powered via USB for flashing
-                and debugging. The light chain is simulated by the on-board
-                WS2812 (RMT driver).
-            n = production: the light chain is driven by an external LED
-                driver (constant current source) via LEDC PWM and a boost
-                converter enable pin.
+            0 = production: light chain via external LED driver (LEDC PWM),
+                automatic light sleep, battery measured via ADC.
+            1 = general tests on USB, energy saving not considered: on-board
+                WS2812 and PWM output driven in parallel, light sleep blocked,
+                emulated battery level, diagnostic logs.
+            2 = energy saving tests: as production (PWM only, on-board LED off,
+                real light sleep) plus diagnostic logs. Monitor via the UART
+                console (UART0, TX GPIO 24 / RX GPIO 23); USB Serial/JTAG does
+                not work in light sleep.
 
-            Light sleep: while the USB Serial/JTAG port is connected, the
-            CPU does not enter automatic light sleep
-            (selects USJ_NO_AUTO_LS_ON_CONNECTION). Whether the 802.15.4
-            radio still sleeps between keepalives in that case is not
-            documented. Without USB connection the device sleeps for real.
+        config ZL_DEBUG_LEVEL_0
+            bool "0: production"
 
-            Further debug-only behaviour is keyed off this option as well
-            (C macro APP_DEBUG in app_config.h).
+        config ZL_DEBUG_LEVEL_1
+            bool "1: general tests (USB, no light sleep)"
+            # Keep the CPU awake while USB is connected, so flashing and the
+            # console keep working (see power_management.c).
+            select USJ_NO_AUTO_LS_ON_CONNECTION
 
-    config ZL_DEBUG_LIGHT_SLEEP
-        bool "Allow automatic light sleep in DEBUG builds"
+        config ZL_DEBUG_LEVEL_2
+            bool "2: energy saving tests (real light sleep, UART console)"
+    endchoice
+
+    config ZL_DEBUG_LEVEL
+        int
+        default 2 if ZL_DEBUG_LEVEL_2
+        default 1 if ZL_DEBUG_LEVEL_1
+        default 0
+
+    config ZL_DEBUG
+        bool
+        default y if ZL_DEBUG_LEVEL_1 || ZL_DEBUG_LEVEL_2
+        help
+            Derived: any DEBUG level (1 or 2).
+
+    config ZL_DEBUG_BATTERY_ADC
+        bool "Measure the battery via ADC in DEBUG builds"
         depends on ZL_DEBUG
         default n
         help
-            n (default): DEBUG builds never enter automatic light sleep, so
-            USB flashing and the console always work.
-            y: light sleep as in production, except while the host sends
-            USB SOF packets (USJ_NO_AUTO_LS_ON_CONNECTION). Caution: if the
-            host suspends the USB port (e.g. Windows selective suspend after
-            closing the monitor), the chip sleeps and the USB Serial/JTAG
-            stops responding (no light sleep support on ESP32-H2). Flashing
-            then needs download mode (hold BOOT, press RESET).
+            n (default): no battery measurement, the emulated level
+            ZL_DEBUG_BATTERY_PERCENT is reported instead.
+            y: measure as in production (voltage divider at GPIO 1, see
+            docs/hardware.md "Akkumessung"). Only useful with the divider
+            connected, e.g. for calibration on the bench: divider fed from
+            the PPK2 source meter, board on USB, common GND. An open GPIO 1
+            gives meaningless values.
 
     config ZL_DEBUG_BATTERY_PERCENT
         int "Emulated battery level in % (DEBUG)"
-        depends on ZL_DEBUG
+        depends on ZL_DEBUG && !ZL_DEBUG_BATTERY_ADC
         range 0 100
         default 95
         help

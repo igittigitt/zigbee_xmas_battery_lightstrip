@@ -121,6 +121,15 @@
 #define ZB_REJOIN_RETRY_MIN_MS          1000
 #define ZB_REJOIN_RETRY_MAX_MS          (5 * 60 * 1000)
 
+/**
+ * DEBUG builds only (APP_DEBUG): after every failed join / rejoin attempt an
+ * active scan on ZB_PRIMARY_CHANNEL_MASK logs every received beacon (sender,
+ * PAN, permit join, end device capacity) before the next attempt is scheduled.
+ * Duration per channel ((1 << n) + 1) * 15.36 ms (ezbee/nwk.h): 3 = ~138 ms,
+ * same order as the BDB default scan (known-issues 1c). Own choice.
+ */
+#define ZB_DIAG_SCAN_DURATION           3
+
 /* ---------------------------------------------------------------------------
  * Platform
  * ------------------------------------------------------------------------- */

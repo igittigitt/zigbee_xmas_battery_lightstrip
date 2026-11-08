@@ -11,27 +11,36 @@ zigbee-light/
 ├── partitions.csv              # nvs (inkl. Zigbee-Daten), phy_init, factory, zb_fct
 ├── dependencies.lock           # Gelockte Komponenten-Versionen
 ├── docs/                       # Diese Dokumentation
+├── z2m/
+│   └── zl-lightchain.mjs       # Zigbee2MQTT External Converter (Licht, Akku, Restlaufzeit Z14)
 └── main/
     ├── CMakeLists.txt          # Quellliste der Komponente "main"
     ├── idf_component.yml       # Abhängigkeiten (esp-zigbee-lib ==2.0.5, idf ~5.5.4)
-    ├── Kconfig.projbuild       # Menü "Zigbee Light": Schalter ZL_DEBUG
-    ├── app_config.h            # APP_DEBUG (0/1) aus CONFIG_ZL_DEBUG
+    ├── Kconfig.projbuild       # Menü "Zigbee Light": DEBUG level 0/1/2
+    ├── app_config.h            # APP_DEBUG_LEVEL (0/1/2), APP_DEBUG u. a. aus Kconfig
     ├── main.c                  # app_main: NVS, Power Mgmt, Licht, Zigbee-Task
     ├── zigbee_config.h         # Zentrale Zigbee-Konstanten (Identität, Keepalive, Commissioning)
     ├── zigbee_device.[ch]      # Stack-Init, Commissioning (Pairing, Rejoin), Signal-Handler, Task
     ├── power_management.[ch]   # esp_pm (automatischer Light Sleep), DEBUG-Sleep-Bericht
+    ├── button.[ch]             # BOOT-Taster (Z5): kurz = Toggle, 5 s = Factory Reset + Pairing
     ├── clusters/
     │   ├── cluster_manager.[ch]       # Baut Endpoint (ZHA Dimmable Light) und registriert ihn
     │   ├── on_off_cluster.[ch]        # On/Off ↔ Licht-Modul, StartUpOnOff (Z6)
     │   ├── identify_cluster.[ch]      # Identify → Blinken (Z11)
-    │   └── power_config_cluster.[ch]  # Power Configuration (Akku, Z7)
+    │   ├── power_config_cluster.[ch]  # Power Configuration (Akku, Z7)
+    │   └── battery_runtime_cluster.[ch] # Herstellerspez. Cluster 0xFC00: Restlaufzeit (Z14)
+    ├── battery/
+    │   ├── battery.[ch]              # Akkuspannung per ADC (Z7), Ruhespannung → %
+    │   ├── battery_model.[ch]        # Verbrauchsmodell → Restlaufzeit (Z14), Zähler im NVS
+    │   └── battery_config.h          # GPIO, Teiler, Kalibrierfaktor, Intervall, OCV-Tabelle, Modellströme
     ├── handlers/
     │   └── attribute_handler.[ch]     # Routing eingehender ZCL-Aktionen
     └── light/
         ├── light.[ch]                # Lichtsteuerung: Task, Rampen (Z3), öffentliche API
         ├── light_config.h            # Pins, Rampendauer, Timings, PWM-Parameter
         ├── light_driver.h            # Backend-Schnittstelle light_driver_t
-        ├── light_driver_ws2812.c     # Backend DEBUG: Onboard-WS2812 über RMT
+        ├── light_driver_ws2812.c     # Onboard-WS2812 über RMT
+        ├── light_driver_debug.c      # Backend DEBUG: WS2812 + PWM parallel
         └── light_driver_pwm.c        # Backend Produktiv: LEDC-PWM + Boost-EN
 ```
 
@@ -68,7 +77,7 @@ power_management.c: esp_pm_configure() – Schlaf steuert ESP-IDF, nicht die Anw
 
 1. `app_main()` ([main.c](../main/main.c)) initialisiert NVS. Die Partition `nvs` enthält auch die Zigbee-Daten; muss sie wegen eines Layoutwechsels gelöscht werden, ist das Pairing weg.
 2. `power_management_init()` aktiviert den automatischen Light Sleep: `esp_pm_configure`, feste 96 MHz.
-3. `light_init()` wählt das Licht-Backend anhand von `APP_DEBUG`, initialisiert es (Licht aus) und startet den Task `light`. Danach gibt `power_management_report()` im DEBUG-Build den GPIO-Sleep-Bericht aus.
+3. `light_init()` wählt das Licht-Backend anhand von `APP_DEBUG_LIGHT` (DEBUG Level 1), initialisiert es (Licht aus) und startet den Task `light`. `button_init()` richtet den BOOT-Taster ein (GPIO-Interrupt + Light-Sleep-Wakeup auf Low-Pegel, Task `button`, der bis zum Tastendruck blockiert). Danach gibt `power_management_report()` im DEBUG-Build den GPIO-Sleep-Bericht aus.
 4. Task `Zigbee_main` (`ZB_TASK_STACK_SIZE` 4096, `ZB_TASK_PRIORITY` 5) führt `zigbee_device_task()` aus ([zigbee_device.c](../main/zigbee_device.c)):
    1. `esp_zigbee_init()`: Rolle ZED, `ed_timeout`, `keep_alive`, Speicher `nvs`, Radio nativ;
    2. Kanalmasken, Signal-Handler, `rx_on_when_idle = false`;
@@ -99,7 +108,9 @@ power_management.c: esp_pm_configure() – Schlaf steuert ESP-IDF, nicht die Anw
 1. `on_off_cluster_set_state()` setzt das Attribut unter dem Lock (für den Taster, Z5).
 2. Ob daraus ein Report wird, hängt von der Reporting-Konfiguration ab, die Z2M beim Interview einrichtet.
 
-Akkuwerte folgen mit Z7.
+**Akkuwerte (Z7):** Ein `esp_timer` (alle `BATTERY_MEASURE_INTERVAL_MS` = 15 min) ruft `power_config_cluster_update()`. Die Funktion misst ohne Lock (`battery_measure_mv()`, einige ms) und setzt dann die Attribute unter dem Zigbee-Lock. Ob daraus ein Report wird, hängt wie oben von der Reporting-Konfiguration ab.
+
+**Restlaufzeit (Z14):** [battery_model.c](../main/battery/battery_model.c) zählt den Verbrauch in µA·µs. Jede Pegeländerung im Lichttask (`light_output()` in [light.c](../main/light/light.c)) bucht die verstrichene Zeit mit dem bisherigen Strom (`BATTERY_I_IDLE_UA` + `BATTERY_I_LIGHT_FULL_UA` × Pegel/255) und merkt sich den neuen Strom. Das ist nur Arithmetik unter einem Spinlock, ohne zusätzliches Aufwachen. Ein eigener `esp_timer` (stündlich, `BATTERY_MODEL_INTERVAL_MS`) schreibt den Tagesmittelwert fort, speichert alle 6 h im NVS (Namespace `battery`) und ruft `cluster_manager_update_runtime()`. Diese Funktion setzt die beiden Attribute des Clusters `0xFC00` unter dem Zigbee-Lock. Die erste Messung in Ruhe nach dem Start (`power_config_cluster.c`) meldet die Spannung an `battery_model_boot_voltage()`. Ab `BATTERY_FULL_MV` (4,15 V) gilt der Akku als frisch geladen, und der Zähler wird zurückgesetzt.
 
 ## Lichtmodul
 
@@ -110,9 +121,10 @@ on_off_cluster.c ──light_set_on()/light_fade_to()──► light.c
                                                  Task "light"
                                                       │ light_driver_t
                                   ┌───────────────────┴───────────────────┐
-                            APP_DEBUG = 1                           APP_DEBUG = 0
-                       light_driver_ws2812.c                    light_driver_pwm.c
-                       RMT → WS2812 (GPIO 8)        LEDC-PWM (GPIO 10) + Boost-EN (GPIO 11)
+                        APP_DEBUG_LIGHT = 1                   APP_DEBUG_LIGHT = 0
+                         (DEBUG Level 1)                    (Level 0 und 2)
+                       light_driver_debug.c                     light_driver_pwm.c
+                       WS2812 (GPIO 8) + PWM (10/11) LEDC-PWM (GPIO 10) + Boost-EN (GPIO 11)
                        Rampe in Software (20 ms)        Rampe per LEDC-Hardware-Fade
 ```
 
