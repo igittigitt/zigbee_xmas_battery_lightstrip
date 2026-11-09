@@ -8,6 +8,10 @@ CONFIG_ZB_ENABLED=y
 CONFIG_ZB_ZED=y
 CONFIG_ZB_RADIO_NATIVE=y
 
+# Flash size: the ESP32-H2FH4S on the ESP32-H2-Zero has 4 MB in-package flash
+# (boot log "Detected size(4096k)"); default would be 2 MB
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
 # Partition table (Zigbee data is stored in the "nvs" partition)
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

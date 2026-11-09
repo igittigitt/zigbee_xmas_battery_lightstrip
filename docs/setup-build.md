@@ -12,7 +12,7 @@ Die Komponenten landen in `managed_components/` (gitignored) und werden beim ers
 
 ### Option A: VS Code + ESP-IDF Extension (Windows)
 
-[.vscode/settings.json](../.vscode/settings.json) ist auf Port `COM5` und clangd aus dem Espressif-Toolchain-Ordner konfiguriert. **`idf.currentSetup` zeigt noch auf `C:\Users\…\esp\v5.5.1\esp-idf` und muss auf `…\esp\v5.5.4\esp-idf` umgestellt werden**, sonst scheitert der Build an der IDF-Version (siehe [known-issues.md](known-issues.md)).
+[.vscode/settings.json](../.vscode/settings.json) ist auf Port `COM5` und clangd aus dem Espressif-Toolchain-Ordner konfiguriert. **Die Erweiterung muss ESP-IDF 5.5.4 verwenden** („ESP-IDF: Select Current ESP-IDF Version“, danach „Developer: Reload Window“). Verwendet sie noch 5.5.1, scheitern Build und menuconfig an der Toolchain-Prüfung (`Tool doesn't match supported version from list ['esp-14.2.0_20241119']`), weil `build/` mit der 5.5.4-Toolchain `esp-14.2.0_20260121` konfiguriert ist (siehe [known-issues.md](known-issues.md), Punkt 14). Die Auswahl listet nur Installationen aus `%USERPROFILE%\.espressif\esp_idf.json`. Eine mit `install.ps1` eingerichtete Version steht dort nicht automatisch und muss von Hand als Eintrag unter `idfInstalled` ergänzt werden (`version`, `python`, `path`, wie beim vorhandenen Eintrag). Hier am 2026-11-08 für 5.5.4 erledigt.
 
 ### Option B: Devcontainer
 
@@ -33,23 +33,28 @@ Konfiguration:
 
 ## DEBUG-Schalter
 
-`DEBUG` ist der zentrale Build-Schalter des Projekts, mit drei Stufen: Kconfig-Auswahl **DEBUG level** (`CONFIG_ZL_DEBUG_LEVEL_0/1/2`, Menü **Zigbee Light**, definiert in [main/Kconfig.projbuild](../main/Kconfig.projbuild)). Im C-Code ([main/app_config.h](../main/app_config.h)):
+`DEBUG` ist der zentrale Build-Schalter des Projekts, mit vier Stufen: Kconfig-Auswahl **DEBUG level** (`CONFIG_ZL_DEBUG_LEVEL_0/1/2/3`, Menü **Zigbee Light**, definiert in [main/Kconfig.projbuild](../main/Kconfig.projbuild)). Im C-Code ([main/app_config.h](../main/app_config.h)):
 
-- `APP_DEBUG_LEVEL`: 0, 1 oder 2.
-- `APP_DEBUG`: 1 bei Level 1 und 2 (abgeleitet aus `CONFIG_ZL_DEBUG`, das automatisch gesetzt wird).
+- `APP_DEBUG_LEVEL`: 0, 1, 2 oder 3.
+- `APP_DEBUG`: 1 bei Level 1, 2 und 3 (abgeleitet aus `CONFIG_ZL_DEBUG`, das automatisch gesetzt wird).
 - `APP_DEBUG_LIGHT`: 1 nur bei Level 1 (Onboard-LED).
+- `APP_DEBUG_ZIGBEE`: 1 nur bei Level 1 (Zigbee-Diagnose im Log).
 - `APP_LIGHT_SLEEP`: 0 nur bei Level 1.
+- `APP_DEBUG_MARKERS`: 1 nur bei Level 3 (PPK2-Marker, Log stumm).
+- `APP_BATTERY_ADC`: 1 bei Level 0 und 3, bei Level 1/2 nur mit `CONFIG_ZL_DEBUG_BATTERY_ADC`.
 
-| | Level 1: allgemeine Tests | Level 2: Energiespar-Tests | Level 0: Produktiv |
-|---|---|---|---|
-| Zweck | Funktionstests am USB, Energieverbrauch egal | Verhalten und Verbrauch wie produktiv, mit Diagnose | Endgerät |
-| Aufbau | ESP32-H2-Zero am USB (Strom, Flash, Log) | Akku bzw. PPK2, Log über UART-Adapter (GPIO 24), siehe [Log im Akkubetrieb](#log-im-akkubetrieb-ohne-usb) | Akku, umgebautes Board, LED-Pfad |
-| Lichterkette | Onboard-WS2812B-0807 an GPIO 8, warmweiß. Farbe und Byte-Reihenfolge stehen in `light_config.h`: Diese LED erwartet **R,G,B** (`LIGHT_WS2812_ORDER_RGB`), am Prototyp ermittelt. **Zusätzlich** wird parallel der PWM-Ausgang für die echte Lichterkette angesteuert (KSQ an GPIO 10, EN GPIO 11), Backend `light_driver_debug.c`; Rampe dort in Software-Stufen (20 ms) statt LEDC-Hardware-Fade | nur PWM wie produktiv; Onboard-LED bleibt aus (wird nicht initialisiert) | externer KSQ-Treiber: PWM GPIO 10, Boost-EN GPIO 11 |
-| Akkustand | **emuliert**: `CONFIG_ZL_DEBUG_BATTERY_PERCENT` (Default 95 %), *menuconfig → Zigbee Light*. Mit `CONFIG_ZL_DEBUG_BATTERY_ADC=y` wird stattdessen wie im Produktivbetrieb gemessen (nur mit angeschlossenem Teiler sinnvoll, z. B. zum Kalibrieren) | wie Level 1 | ADC-Messung an GPIO 1 (`APP_BATTERY_ADC`), siehe [hardware.md](hardware.md#firmware-umsetzung-z7) |
-| Light Sleep | **gesperrt** per PM-Lock. Außerdem `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` (per `select`). Details: [power-management.md](power-management.md#sleep-simulation-im-debug-build) | **echt**. USB Serial/JTAG fällt im Schlaf aus, daher UART-Konsole | echt |
-| Diagnose-Log | GPIO-Sleep-Bericht beim Start, TX-Leistung und Nachbartabelle nach dem Join, nach jedem gescheiterten Join/Rejoin Nachbartabelle + Beacon-Scan ([known-issues 1c](known-issues.md)) | wie Level 1 | nur Parent nach dem Join |
+| | Level 1: allgemeine Tests | Level 2: Energiespar-Tests | Level 3: PPK2-Strommessung | Level 0: Produktiv |
+|---|---|---|---|---|
+| Zweck | Allgemeines und Zigbee-Debugging am USB, Energieverbrauch egal | Verhalten wie produktiv, mit Log über UART | Strommessung: Verhalten wie produktiv, Ereignisse als Marker auf den PPK2-Logikeingängen statt Log | Endgerät |
+| Aufbau | ESP32-H2-Zero am USB (Strom, Flash, Log) | Akku bzw. PPK2, Log über UART-Adapter (GPIO 24), siehe [Log im Akkubetrieb](#log-im-akkubetrieb-ohne-usb) | PPK2 als Quelle, Logic-Port an GPIO 2–5, **kein UART-Adapter** (speist über seine Leitungen mit), siehe [PPK2-Marker](#ppk2-marker-level-3) | Akku, umgebautes Board, LED-Pfad |
+| Lichterkette | Onboard-WS2812B-0807 an GPIO 8, warmweiß. Farbe und Byte-Reihenfolge stehen in `light_config.h`: Diese LED erwartet **R,G,B** (`LIGHT_WS2812_ORDER_RGB`), am Prototyp ermittelt. **Zusätzlich** wird parallel der PWM-Ausgang für die echte Lichterkette angesteuert (KSQ an GPIO 10, EN GPIO 11), Backend `light_driver_debug.c`; Rampe dort in Software-Stufen (20 ms) statt LEDC-Hardware-Fade | nur PWM wie produktiv; Onboard-LED bleibt aus (wird nicht initialisiert) | wie Level 2 | externer KSQ-Treiber: PWM GPIO 10, Boost-EN GPIO 11 |
+| Akkustand | **emuliert**: `CONFIG_ZL_DEBUG_BATTERY_PERCENT` (Default 95 %), *menuconfig → Zigbee Light*. Mit `CONFIG_ZL_DEBUG_BATTERY_ADC=y` wird stattdessen wie im Produktivbetrieb gemessen (nur mit angeschlossenem Teiler sinnvoll, z. B. zum Kalibrieren) | wie Level 1 | ADC-Messung wie produktiv | ADC-Messung an GPIO 1 (`APP_BATTERY_ADC`), siehe [hardware.md](hardware.md#firmware-umsetzung-z7) |
+| Light Sleep | **gesperrt** per PM-Lock. Außerdem `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` (per `select`). Details: [power-management.md](power-management.md#sleep-simulation-im-debug-build) | **echt**. USB Serial/JTAG fällt im Schlaf aus, daher UART-Konsole | echt; Callbacks beim Ein- und Ausschlafen setzen Marker D0 | echt |
+| Diagnose-Log | GPIO-Sleep-Bericht beim Start; Zigbee-Diagnose (`APP_DEBUG_ZIGBEE`): TX-Leistung und Nachbartabelle nach dem Join, nach jedem gescheiterten Join/Rejoin Nachbartabelle + aktuelle Min-Join-LQI; Radio-Trace (`ZL_DEBUG_RADIO_TRACE`, nur Level 1, Standard an): empfangene Beacons mit LQI/RSSI, Beacon Requests, Association Request/Response, NWK-Kommandos; eigener Beacon-Scan nur mit `ZL_DEBUG_DIAG_SCAN` (nur Level 1, Standard aus) ([known-issues 1c](known-issues.md)) | GPIO-Sleep-Bericht beim Start, sonst wie produktiv (keine Zigbee-Diagnose, kein Radio-Trace), damit das Log die Wachzeit nicht verlängert | **stumm**: nach `debug_marker_init()` `esp_log_level_set("*", ESP_LOG_NONE)`. Davor kommen nur die Boot-Meldungen von ROM, Bootloader und IDF sowie die erste App-Zeile | Min-Join-LQI beim Start, Parent nach dem Join |
 
-Weitere Debug-Abweichungen an `APP_DEBUG` (beide Level) oder `APP_DEBUG_LEVEL` hängen und in diese Tabelle eintragen. Im Code bevorzugt `if (APP_DEBUG)` statt `#if`, damit beide Zweige kompiliert werden.
+Jeder DEBUG-Build (Level ≥ 1) gibt direkt nach dem Start ein auffälliges Banner `***  DEBUG BUILD (LEVEL n)  ***` als Warnung (gelb) im Log aus ([main.c](../main/main.c)), auch in Level 3 vor dem Stummschalten des Logs. Produktiv-Builds geben es nicht aus.
+
+Weitere Debug-Abweichungen an `APP_DEBUG` (alle DEBUG-Level), `APP_DEBUG_ZIGBEE` (Zigbee-Diagnose, Level 1) oder `APP_DEBUG_LEVEL` hängen und in diese Tabelle eintragen. Im Code bevorzugt `if (APP_DEBUG)` statt `#if`, damit beide Zweige kompiliert werden.
 
 Umschalten:
 
@@ -60,6 +65,34 @@ Umschalten:
   ```bash
   idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;release.defaults" build
   ```
+- **Level 2** auf dieselbe Weise mit [level2.defaults](../level2.defaults) und `-B build_l2`. Schalter `ZL_DEBUG_PM_DUMP` (nur Level 2, Standard an, setzt `CONFIG_PM_PROFILING` per `select`): alle `POWER_MGMT_PM_DUMP_INTERVAL_MS` (30 s) gibt `esp_pm_dump_locks()` über die UART-Konsole aus, welche PM-Locks wie lange gehalten wurden, die Zeit pro PM-Modus und die Zähler `light_sleep_counts` / `light_sleep_reject_counts`. Damit lässt sich klären, was den Light Sleep verhindert.
+- **Level 3** auf dieselbe Weise mit [level3.defaults](../level3.defaults) (im Repo). Flashen aus diesem Verzeichnis, USB dafür kurz anstecken und den PPK2-Ausgang vorher ausschalten:
+  ```bash
+  idf.py -B build_l3 -D SDKCONFIG=build_l3/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;level3.defaults" build
+  idf.py -B build_l3 -D SDKCONFIG=build_l3/sdkconfig -p COMx flash
+  ```
+  In der PowerShell das Argument in Anführungszeichen setzen: `-D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;level3.defaults"`. Die Verzeichnisse `build_*/` sind gitignored.
+
+**Welche Firmware läuft?** Maßgeblich ist die Zeile `app_init: ELF file SHA256:` im Startlog. Sie mit dem Hash des Builds vergleichen, z. B. `sha256sum build_l3/zigbee_node.elf` (die ersten 9 Zeichen). Die Zeile `app_init: Compile time:` taugt dafür nicht: Am 2026-11-09 zeigte sie nach dem Flashen eines neuen inkrementellen Builds noch die Zeit eines älteren Builds, obwohl der SHA256 bewies, dass die neue Firmware lief. Die Monitor-Warnung „Checksum mismatch between flashed and built applications“ bedeutet nur, dass der Monitor mit einem anderen Build-Verzeichnis vergleicht. `idf.py monitor` deshalb mit denselben `-B …`/`-D SDKCONFIG=…`-Angaben wie beim Flashen starten.
+
+### PPK2-Marker (Level 3)
+
+Modul [main/debug_marker.c](../main/debug_marker.c), Pins in [debug_marker.h](../main/debug_marker.h). Die Marker-Pins halten ihren Pegel auch im Light Sleep (`gpio_sleep_sel_dis()`).
+
+| PPK2 | GPIO | High bedeutet |
+|---|---|---|
+| D0 | 2 | wach (Low = im automatischen Light Sleep). Gesetzt von `esp_pm_light_sleep_register_cbs()`-Callbacks (`CONFIG_PM_LIGHT_SLEEP_CALLBACKS`, per `select` von Level 3) |
+| D1 | 3 | **wechselt den Pegel** bei jedem Zigbee-Signal (`zigbee_signal_handler`) und jeder ZCL-Aktion (`attribute_handler_callback`): jede Flanke = ein Ereignis. Ein Puls wäre zu kurz, weil die Handler nur Arbeit einreihen (wenige µs) und der PPK2 bei 100 kS/s nur alle 10 µs abtastet (S4-Messung 2026-11-09: D1 blieb flach) |
+| D2 | 4 | Licht-Task ändert den Pegel, inkl. LEDC-Fade (`light_apply_level`, der Fade wartet mit `LEDC_FADE_WAIT_DONE`) |
+| D3 | 5 | Akkumessung: ADC-Unit angelegt bis gelöscht (`battery_measure_mv`) |
+
+Anschluss: PPK2 Logic `VCC` → 3V3 des Boards (Pegelreferenz), Logic `GND` → GND, D0–D3 → GPIO 2–5. Im Power Profiler die *Digital channels* einblenden.
+
+> ⚠️ **Befund 2026-11-09:** Mit angeschlossenem Logic-Kabel zeigte die erste Stufe-3-Messung konstant ≈ 11 mA, und auf D0–D3 gab es keinen einzigen Pegelwechsel. Ohne Logic-Kabel schläft dieselbe Firmware normal (Ruhephase 866 µA). Ursache **[UNBELEGT]**. Ich glaube es könnte so sein: Der Logic-Port wurde angesteckt bzw. VCC verbunden, während der PPK2 das Board bereits versorgte. In einem Nordic-DevZone-Thread (Forenbeitrag, nicht offiziell: [#77521](https://devzone.nordicsemi.com/f/nordic-q-a/77521/unexpected-behaviour-with-ppk2-logic-inputs-logic-port-vcc-pin)) wird für genau diese Reihenfolge ein Latch-up des Pegelwandlers im PPK2 vermutet, mit dem Symptom „keine Logikpegel“. **Vorgehen bis zur Klärung:** Logic-Kabel komplett anschließen (GND, VCC, D0–D3), **solange der PPK2-Ausgang aus ist**, erst dann den Ausgang einschalten. Wie viel Strom der Logic-Port selbst zieht, nennen die gefundenen Quellen nicht. **Nachmessung 2026-11-09:** Logic-Kabel bei ausgeschaltetem PPK2-Ausgang angesteckt, dann eingeschaltet. Die Ruhephase blieb bei 864 µA, genauso wie ohne Kabel (866 µA). Der Logic-Port zieht in dieser Reihenfolge also keinen messbaren Strom aus dem Board.
+
+- Die Callbacks laufen laut Kconfig-Hilfe im Idle-Task, direkt vor und nach dem Schlaf, und gehen in die Berechnung der Schlafdauer ein. Sie setzen nur einen Pin (`gpio_set_level` im IRAM, `CONFIG_GPIO_CTRL_FUNC_IN_IRAM`, ebenfalls per `select`).
+- **[UNBELEGT]**: ob der Logic-Port des PPK2 (VCC-Referenz, Eingänge) selbst messbar Strom aus dem Board zieht. Einmal S3 mit und ohne angestecktes Logic-Kabel vergleichen.
+- Die Pins halten ihren Pegel im Light Sleep trotz `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP`: Am 2026-11-09 war D0 während der µA-Phasen Low und nur während des Polls High (PPK2-Aufnahme).
 
 ### Build aus der PowerShell
 

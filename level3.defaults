@@ -1,0 +1,5 @@
+# Additional Kconfig defaults for DEBUG level 3 (PPK2 current measurement with
+# GPIO markers, no log), used on top of sdkconfig.defaults in a separate build
+# directory so the local sdkconfig stays untouched (docs/setup-build.md):
+#   idf.py -B build_l3 -D SDKCONFIG=build_l3/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;level3.defaults" build
+CONFIG_ZL_DEBUG_LEVEL_3=y

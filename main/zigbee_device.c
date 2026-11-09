@@ -23,6 +23,7 @@
 #include "level_cluster.h"
 #include "attribute_handler.h"
 #include "status_indicator.h"
+#include "debug_marker.h"
 #include "app_config.h"
 
 static const char *TAG = "ZIGBEE_DEVICE";
@@ -39,7 +40,7 @@ static uint32_t s_rejoin_attempts;
 static uint32_t s_rejoin_delay_ms;
 
 /*
- * DEBUG diagnostic scan (APP_DEBUG): while it runs, the next commissioning
+ * DEBUG diagnostic scan (APP_DEBUG_DIAG_SCAN): while it runs, the next commissioning
  * attempt is held back and scheduled from the end of the scan.
  */
 static bool s_diag_scan_pending;
@@ -85,14 +86,14 @@ static void log_neighbors(const char *when)
 
     while (ezb_nwk_get_next_neighbor(&it, &nbr) == EZB_ERR_NONE) {
         count++;
-        if (!APP_DEBUG && nbr.relationship != EZB_NWK_RELATIONSHIP_PARENT) {
+        if (!APP_DEBUG_ZIGBEE && nbr.relationship != EZB_NWK_RELATIONSHIP_PARENT) {
             continue;
         }
         ESP_LOGI(TAG, "%s: neighbor 0x%04hx (IEEE 0x%016llx) %s, %s, depth %u, LQI %u, outgoing cost %u", when,
                  nbr.short_addr, (unsigned long long)nbr.ieee_addr.u64, device_type_str(nbr.device_type),
                  relationship_str(nbr.relationship), nbr.depth, nbr.lqi, nbr.outgoing_cost);
     }
-    if (APP_DEBUG) {
+    if (APP_DEBUG_ZIGBEE) {
         ESP_LOGI(TAG, "%s: %u neighbor(s)", when, count);
     }
 }
@@ -161,7 +162,6 @@ static bool diag_scan_start(uint32_t delay_ms)
         .user_ctx = NULL,
     };
 
-    log_neighbors("After failed attempt");
     s_diag_beacons = 0;
     ezb_err_t err = ezb_nwk_scan(&req);
     if (err != EZB_ERR_NONE) {
@@ -178,7 +178,12 @@ static void schedule_commissioning(ezb_bdb_comm_mode_mask_t mode, uint32_t delay
     esp_timer_stop(s_retry_timer);
     s_diag_scan_pending = false;
     s_retry_mode = mode;
-    if (APP_DEBUG && diag_scan_start(delay_ms)) {
+    if (APP_DEBUG_ZIGBEE) {
+        log_neighbors("After failed attempt");
+        // Detects whether the stack resets the threshold set in zigbee_setup()
+        ESP_LOGI(TAG, "Min join LQI now %u", ezb_nwk_get_min_join_lqi());
+    }
+    if (APP_DEBUG_DIAG_SCAN && diag_scan_start(delay_ms)) {
         return;
     }
     start_retry_timer(delay_ms);
@@ -234,11 +239,11 @@ static void rejoin_schedule(void)
     schedule_commissioning(EZB_BDB_MODE_INITIALIZATION, delay_ms);
 }
 
-/* Log the parent (DEBUG: whole neighbor table) and the TX power after joining. */
+/* Log the parent (DEBUG level 1: whole neighbor table and TX power) after joining. */
 static void log_parent(void)
 {
     log_neighbors("Joined");
-    if (APP_DEBUG) {
+    if (APP_DEBUG_ZIGBEE) {
         // Diagnostics for docs/known-issues.md 1c: the IDF 802.15.4 driver
         // defaults to the maximum (ESP32-H2: 20 dBm); does the stack change it?
         int8_t tx_power = 0;
@@ -277,6 +282,7 @@ static ezb_bdb_comm_status_t signal_bdb_status(const ezb_app_signal_t *app_signa
 
 static bool zigbee_signal_handler(const ezb_app_signal_t *app_signal)
 {
+    debug_marker_toggle(DEBUG_MARKER_ZIGBEE);       // PPK2 marker D1: one edge per event (DEBUG level 3)
     ezb_app_signal_type_t type = ezb_app_signal_get_type(app_signal);
 
     switch (type) {
@@ -391,6 +397,9 @@ static esp_err_t zigbee_setup(void)
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_app_signal_add_handler(zigbee_signal_handler)),
                         TAG, "signal handler");
     ezb_nwk_set_rx_on_when_idle(ZB_RX_ON_WHEN_IDLE);
+    uint8_t default_lqi = ezb_nwk_get_min_join_lqi();
+    ezb_nwk_set_min_join_lqi(ZB_MIN_JOIN_LQI);
+    ESP_LOGI(TAG, "Min join LQI: %u (stack default %u)", ezb_nwk_get_min_join_lqi(), default_lqi);
 
     // Data model: endpoint with clusters, then ZCL action callbacks
     ESP_RETURN_ON_ERROR(cluster_manager_register_device(), TAG, "device registration");

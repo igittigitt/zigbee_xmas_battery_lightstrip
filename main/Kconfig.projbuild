@@ -16,6 +16,11 @@ menu "Zigbee Light"
                 real light sleep) plus diagnostic logs. Monitor via the UART
                 console (UART0, TX GPIO 24 / RX GPIO 23); USB Serial/JTAG does
                 not work in light sleep.
+            3 = current measurement with the PPK2: as production (PWM only,
+                real light sleep, battery via ADC), application log silenced,
+                event markers on GPIO 2-5 for the PPK2 logic inputs D0-D3
+                (main/debug_marker.h). No UART adapter needed; disconnect it,
+                it can feed the board through its signal lines.
 
         config ZL_DEBUG_LEVEL_0
             bool "0: production"
@@ -28,23 +33,67 @@ menu "Zigbee Light"
 
         config ZL_DEBUG_LEVEL_2
             bool "2: energy saving tests (real light sleep, UART console)"
+
+        config ZL_DEBUG_LEVEL_3
+            bool "3: PPK2 current measurement (GPIO markers, no log)"
+            # Sleep marker: callbacks around automatic light sleep (esp_pm.h).
+            # They run from IRAM, so gpio_set_level() must be in IRAM too.
+            select PM_LIGHT_SLEEP_CALLBACKS
+            select GPIO_CTRL_FUNC_IN_IRAM
     endchoice
 
     config ZL_DEBUG_LEVEL
         int
+        default 3 if ZL_DEBUG_LEVEL_3
         default 2 if ZL_DEBUG_LEVEL_2
         default 1 if ZL_DEBUG_LEVEL_1
         default 0
 
     config ZL_DEBUG
         bool
-        default y if ZL_DEBUG_LEVEL_1 || ZL_DEBUG_LEVEL_2
+        default y if ZL_DEBUG_LEVEL_1 || ZL_DEBUG_LEVEL_2 || ZL_DEBUG_LEVEL_3
         help
-            Derived: any DEBUG level (1 or 2).
+            Derived: any DEBUG level (1, 2 or 3).
+
+    config ZL_DEBUG_RADIO_TRACE
+        bool "Log beacons and join frames with LQI/RSSI (DEBUG level 1)"
+        depends on ZL_DEBUG_LEVEL_1
+        default y
+        help
+            Wraps the 802.15.4 driver callbacks (linker --wrap) and logs
+            received beacons with LQI and RSSI, sent beacon requests,
+            association request/response (= chosen parent and its answer),
+            unicast NWK commands (rejoin ...) and their TX result. Passive:
+            it does not send anything itself. See main/radio_trace.h.
+            Level 1 only: level 2 (energy measurement) keeps logging low.
+
+    config ZL_DEBUG_DIAG_SCAN
+        bool "Own active scan after each failed join attempt (DEBUG level 1)"
+        depends on ZL_DEBUG_LEVEL_1
+        default n
+        help
+            Starts an extra active scan (ezb_nwk_scan) after each failed
+            commissioning attempt and logs the beacons the stack reports.
+            Off by default, so the own scan cannot interfere with BDB
+            commissioning; ZL_DEBUG_RADIO_TRACE shows the beacons of the
+            stack's own scans instead.
+
+    config ZL_DEBUG_PM_DUMP
+        bool "Print PM locks and sleep statistics periodically (DEBUG level 2)"
+        depends on ZL_DEBUG_LEVEL_2
+        default y
+        select PM_PROFILING
+        help
+            Prints esp_pm_dump_locks() to the UART console every
+            POWER_MGMT_PM_DUMP_INTERVAL_MS (power_management.h): all PM locks
+            with holder count and held time, time per PM mode and the number
+            of light sleeps and rejected light sleeps. Shows what keeps the
+            chip out of light sleep. PM_PROFILING adds some run-time overhead
+            (Kconfig help), so only for diagnosis.
 
     config ZL_DEBUG_BATTERY_ADC
         bool "Measure the battery via ADC in DEBUG builds"
-        depends on ZL_DEBUG
+        depends on ZL_DEBUG && !ZL_DEBUG_LEVEL_3
         default n
         help
             n (default): no battery measurement, the emulated level
@@ -57,7 +106,7 @@ menu "Zigbee Light"
 
     config ZL_DEBUG_BATTERY_PERCENT
         int "Emulated battery level in % (DEBUG)"
-        depends on ZL_DEBUG && !ZL_DEBUG_BATTERY_ADC
+        depends on ZL_DEBUG && !ZL_DEBUG_BATTERY_ADC && !ZL_DEBUG_LEVEL_3
         range 0 100
         default 95
         help

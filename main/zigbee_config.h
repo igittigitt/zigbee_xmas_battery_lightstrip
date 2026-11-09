@@ -84,6 +84,18 @@
 /** Do not keep the receiver on while idle (Sleepy End Device, faq.rst). */
 #define ZB_RX_ON_WHEN_IDLE              false
 
+/**
+ * Minimum LQI of a beacon for the parent to be considered during join
+ * (ezb_nwk_set_min_join_lqi, ezbee/nwk.h). The 2.0.x default is reported to be
+ * 75 and 32 in 1.x - user comments only, not confirmed by Espressif, see
+ * https://github.com/espressif/esp-zigbee-sdk/issues/840 (same symptoms as
+ * known-issues 1c: 0x2c3 NOT_PERMITTED despite permit-open beacons). The
+ * actual default is logged at startup: 75 with 2.0.5 (log 2026-11-08). With
+ * 75 every candidate failed (parent LQI after join 37-44); 32 = value that
+ * fixed the join there and here (known-issues 1c).
+ */
+#define ZB_MIN_JOIN_LQI                 32
+
 /* ---------------------------------------------------------------------------
  * Commissioning
  * ------------------------------------------------------------------------- */
@@ -122,7 +134,7 @@
 #define ZB_REJOIN_RETRY_MAX_MS          (5 * 60 * 1000)
 
 /**
- * DEBUG builds only (APP_DEBUG): after every failed join / rejoin attempt an
+ * DEBUG level 1 with ZL_DEBUG_DIAG_SCAN only: after every failed join / rejoin attempt an
  * active scan on ZB_PRIMARY_CHANNEL_MASK logs every received beacon (sender,
  * PAN, permit join, end device capacity) before the next attempt is scheduled.
  * Duration per channel ((1 << n) + 1) * 15.36 ms (ezbee/nwk.h): 3 = ~138 ms,

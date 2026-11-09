@@ -6,6 +6,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "battery.h"
 #include "battery_config.h"
+#include "debug_marker.h"
 
 static const char *TAG = "BATTERY";
 
@@ -77,12 +78,19 @@ esp_err_t battery_measure_mv(uint32_t *mv)
         .ulp_mode = ADC_ULP_MODE_DISABLE,
     };
     adc_oneshot_unit_handle_t unit = NULL;
-    ESP_RETURN_ON_ERROR(adc_oneshot_new_unit(&unit_cfg, &unit), TAG, "ADC unit");
+    debug_marker_set(DEBUG_MARKER_BATTERY, true);   // PPK2 marker D3 (DEBUG level 3)
+    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &unit);
+    if (err != ESP_OK) {
+        debug_marker_set(DEBUG_MARKER_BATTERY, false);
+        ESP_LOGE(TAG, "ADC unit: %s", esp_err_to_name(err));
+        return err;
+    }
 
     uint32_t pin_mv = 0;
-    esp_err_t err = read_pin_mv(unit, &pin_mv);
+    err = read_pin_mv(unit, &pin_mv);
     // Always delete the unit: releases the power domains for light sleep
     esp_err_t del_err = adc_oneshot_del_unit(unit);
+    debug_marker_set(DEBUG_MARKER_BATTERY, false);
     ESP_RETURN_ON_ERROR(err, TAG, "ADC read");
     ESP_RETURN_ON_ERROR(del_err, TAG, "ADC unit delete");
 

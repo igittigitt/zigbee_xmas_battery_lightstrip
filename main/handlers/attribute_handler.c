@@ -4,6 +4,7 @@
 #include "on_off_cluster.h"
 #include "level_cluster.h"
 #include "identify_cluster.h"
+#include "debug_marker.h"
 
 static const char *TAG = "ATTR_HANDLER";
 
@@ -45,6 +46,7 @@ void attribute_handler_callback(ezb_zcl_core_action_callback_id_t callback_id, v
         return;
     }
 
+    debug_marker_toggle(DEBUG_MARKER_ZIGBEE);       // PPK2 marker D1: one edge per event (DEBUG level 3)
     switch (callback_id) {
     case EZB_ZCL_CORE_SET_ATTR_VALUE_CB_ID:
         set_attr_value_handler(message);

@@ -8,6 +8,12 @@
 /** GPIOs reported in the DEBUG sleep GPIO report, in addition to the light backend pins. */
 #define SLEEP_REPORT_EXTRA_GPIO_MASK (1ULL << GPIO_NUM_9)   // BOOT button (goal Z5)
 
+/** DEBUG level 2 (ZL_DEBUG_PM_DUMP): interval of the PM lock / sleep statistics dump. Own choice. */
+#define POWER_MGMT_PM_DUMP_INTERVAL_MS  30000
+
+/** Stack of the dump task; esp_pm_dump_locks() formats with fprintf. Own choice. */
+#define POWER_MGMT_PM_DUMP_STACK_SIZE   3072
+
 /**
  * @brief Enable automatic light sleep (Sleepy End Device, goal Z1).
  *

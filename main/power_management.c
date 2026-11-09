@@ -1,5 +1,8 @@
+#include <stdio.h>
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
@@ -87,10 +90,28 @@ esp_err_t power_management_init(void)
 #endif
 }
 
+/*
+ * DEBUG level 2: print the PM locks (name, type, count, held time) and the
+ * time per PM mode incl. light sleep / rejected light sleep counters
+ * (esp_pm_dump_locks(), PM_PROFILING). vTaskDelay() does not block sleep.
+ */
+static void pm_dump_task(void *arg)
+{
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(POWER_MGMT_PM_DUMP_INTERVAL_MS));
+        ESP_LOGI(TAG, "PM locks and sleep statistics:");
+        esp_pm_dump_locks(stdout);
+    }
+}
+
 void power_management_report(void)
 {
     if (!APP_DEBUG) {
         return;
+    }
+    if (APP_DEBUG_PM_DUMP &&
+        xTaskCreate(pm_dump_task, "pm_dump", POWER_MGMT_PM_DUMP_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "PM dump task not started");
     }
     if (!APP_LIGHT_SLEEP) {
         // No sleep at all: nothing simulated, GPIO report still useful for sleep tests

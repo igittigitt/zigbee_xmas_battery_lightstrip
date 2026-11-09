@@ -18,6 +18,8 @@ idf_component_register(
         "light/light_driver_pwm.c"
         "light/light_driver_debug.c"
         "battery/battery_model.c"
+        "radio_trace.c"
+        "debug_marker.c"
     INCLUDE_DIRS
         "."
         "clusters"
@@ -33,4 +35,14 @@ idf_component_register(
         esp_driver_ledc
         esp_driver_rmt
         esp_driver_usb_serial_jtag
+        ieee802154
 )
+
+# DEBUG radio trace: route the 802.15.4 driver callbacks (implemented by the
+# Zigbee library) through radio_trace.c, see radio_trace.h.
+if(CONFIG_ZL_DEBUG_RADIO_TRACE)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE
+        "-Wl,--wrap=esp_ieee802154_receive_done"
+        "-Wl,--wrap=esp_ieee802154_transmit_done"
+        "-Wl,--wrap=esp_ieee802154_transmit_failed")
+endif()

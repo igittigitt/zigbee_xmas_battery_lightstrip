@@ -1,0 +1,6 @@
+# Additional Kconfig defaults for DEBUG level 2 (energy saving tests: real light
+# sleep, log via UART adapter on GPIO 24, PM lock / sleep statistics every 30 s),
+# used on top of sdkconfig.defaults in a separate build directory so the local
+# sdkconfig stays untouched (docs/setup-build.md):
+#   idf.py -B build_l2 -D SDKCONFIG=build_l2/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;level2.defaults" build
+CONFIG_ZL_DEBUG_LEVEL_2=y

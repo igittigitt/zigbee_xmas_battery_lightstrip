@@ -45,8 +45,10 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/battery/battery.c` | Akkuspannung per ADC (Unit nur während der Messung, wegen Sleep-Power-Domänen), Ruhespannung → %; Konstanten in `battery_config.h` |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |
 | `main/button.c` | BOOT-Taster GPIO 9 (Z5): kurz = Toggle (nur verbunden), ≥ 5 s = Factory Reset + Pairing; immer aktiv, weckt aus Light Sleep |
+| `main/debug_marker.c` | Nur DEBUG Level 3 (`APP_DEBUG_MARKERS`): PPK2-Marker auf GPIO 2–5 (D0 wach/Sleep per `esp_pm`-Sleep-Callbacks, D1 Zigbee, D2 Licht, D3 Akkumessung), Log stumm; sonst leere Inline-Stubs |
+| `main/radio_trace.c` | Nur DEBUG (`ZL_DEBUG_RADIO_TRACE`): Beacons/Join-Frames mit LQI/RSSI loggen, per Linker-`--wrap` der 802.15.4-Treiber-Callbacks (`main/CMakeLists.txt`) |
 | `main/power_management.c` | `esp_pm` (automatischer Light Sleep), DEBUG-Sleep-Bericht |
-| `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG level** 0/1/2 (`CONFIG_ZL_DEBUG_LEVEL_x` → `APP_DEBUG_LEVEL`, `APP_DEBUG` = Level ≥ 1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
+| `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG level** 0/1/2/3 (`CONFIG_ZL_DEBUG_LEVEL_x` → `APP_DEBUG_LEVEL`, `APP_DEBUG` = Level ≥ 1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
 | `main/light/light.c` | Lichtsteuerung: Task, Rampen, API `light_set_on`/`light_fade_to` (nicht blockierend) |
 | `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `pwm` (Produktiv, LEDC + Boost-EN), `debug` (DEBUG: `ws2812` Onboard-LED + `pwm` parallel) |
 ## Konventionen

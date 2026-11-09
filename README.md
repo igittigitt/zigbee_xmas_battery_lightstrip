@@ -86,8 +86,14 @@ Getestet am 2026-11-08 mit Zigbee2MQTT als Home-Assistant-Add-on.
 ### 1. Gerät anlernen
 
 1. In Z2M **„Beitritt erlauben“** (Permit join) aktivieren.
-2. Gerät einschalten. Es sucht nach dem Start 3 min lang ein Netz.
-3. Das Gerät erscheint als `zigbee-light` / `ZL-LightChain`.
+2. Gerät in den Pairing-Modus bringen:
+   - **Neues Gerät** (noch nie angelernt): einfach einschalten.
+   - **Schon einmal angelernt** (z. B. aus Z2M entfernt, neues Netz, Rejoin klappt nicht): **BOOT-Taster ≥ 5 s halten**. Bei 5 s blitzt die Lichterkette kurz auf → loslassen. Das Gerät löscht seine Netzdaten (Factory Reset), startet neu und geht in den Pairing-Modus. Funktioniert in jedem Zustand, auch während das Gerät noch das alte Netz sucht.
+3. Im Pairing-Modus blinkt die Lichterkette schnell (ca. 2 Hz). Das Gerät sucht **3 min** lang ein Netz. Danach hört es auf, das Licht geht aus (schont den Akku). Für einen neuen Versuch den BOOT-Taster erneut ≥ 5 s halten.
+4. Nach erfolgreichem Beitritt leuchtet die Lichterkette 2 s, dann gilt der eingestellte Einschaltzustand (bei neuem Gerät: aus).
+5. Das Gerät erscheint als `zigbee-light` / `ZL-LightChain`.
+
+Kurzer Druck auf den BOOT-Taster schaltet das Licht im Betrieb ein/aus (nur wenn das Gerät verbunden ist).
 
 Ohne den External Converter (Schritt 2) zeigt Z2M im Reiter *Info* **„Generated support“**. Dann gibt es nur Licht, Identify und den Akkustand in %. Es fehlen die Spannung und die Restlaufzeit.
 

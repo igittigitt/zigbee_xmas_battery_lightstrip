@@ -165,6 +165,9 @@ Erwarteter Ruhestrom im Light Sleep (Typwerte, **durch Messung zu bestätigen**)
 |---|---|---|---|---|
 | Original | [UNBELEGT], s. o. (≤ 1 µA bis 2,5 mA je nach Quelle) | 100 µA (ME6217 typ.) | 85 µA | ≥ 185 µA + WS2812 – messen (Szenario S3/M2) |
 | Nach Umbau | – | ≈ 2 µA | 85 µA | ≈ 90 µA |
+| **Gemessen Original (2026-11-09)** | bestückt | ME6217 | DEBUG-Stufe 2, Light Sleep laut `esp_pm_dump_locks()` 98 % | **≈ 847 µA** zwischen den Polls (PPK2, 3,7 V, UART-Adapter angeschlossen) |
+
+Ich glaube es könnte so sein: Die Differenz von ≈ 660 µA zur Summe der belegten Posten (≈ 185 µA) stammt überwiegend von der WS2812. Das läge in der Größenordnung der 0,6 mA, die WorldSemi für WS2812B-V5/W angibt. Der UART-Adapter ist ausgeschlossen: Ohne ihn lag der Ruhestrom bei 863 µA, mit ihm bei 852 µA (gleiche Firmware). Ob es wirklich die WS2812 ist, zeigt erst die Messung nach dem Auslöten.
 
 Hinzu kommen Spannungsteiler der Akkumessung (~2 µA), Leckstrom des abgeschalteten LED-Pfads und die Zigbee-Polls.
 
@@ -255,7 +258,7 @@ Strapping-Pins laut Datenblatt: **nur GPIO 8, 9 und 25** – meiden. GPIO 13/14 
 
 | GPIO | Funktion | Status |
 |---|---|---|
-| 9 | Taster (BOOT), kurz = Toggle, ≥ 5 s = Factory Reset + Pairing – `BUTTON_GPIO` in [button.h](../main/button.h). Eingang mit internem Pull-up, Light-Sleep-Wakeup auf Low | im Code, am Gerät ungetestet |
+| 9 | Taster (BOOT), kurz = Toggle, ≥ 5 s = Factory Reset + Pairing – `BUTTON_GPIO` in [button.h](../main/button.h). Eingang mit internem Pull-up, Light-Sleep-Wakeup auf Low | am Prototyp bestätigt (Level 1); Wecken aus Light Sleep ungetestet |
 | 10 | PWM → CE der KSQ (LEDC), Produktiv- und DEBUG-Build – `LIGHT_PWM_GPIO` | [VORSCHLAG], im Code hinterlegt |
 | 11 | EN Boost-Wandler / Lastschalter, nur Produktiv-Build – `LIGHT_PWM_EN_GPIO` | [VORSCHLAG], im Code hinterlegt |
 | 1 (ADC1_CH0) | Akkuspannung über Spannungsteiler 1 MΩ/1 MΩ + 100 nF – `BATTERY_ADC_GPIO` in [battery_config.h](../main/battery/battery_config.h). Im DEBUG-Build nur mit `CONFIG_ZL_DEBUG_BATTERY_ADC` | [VORSCHLAG], im Code hinterlegt |

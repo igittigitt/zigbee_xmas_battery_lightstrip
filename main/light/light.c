@@ -8,6 +8,7 @@
 #include "light.h"
 #include "light_config.h"
 #include "light_driver.h"
+#include "debug_marker.h"
 
 static const char *TAG = "LIGHT";
 
@@ -68,8 +69,21 @@ static void light_software_ramp(uint8_t target, uint32_t duration_ms)
     light_output(target);
 }
 
-/** Move the output to level; ramp_ms refers to a full 0 <-> max transition. */
+static void light_apply_level_impl(uint8_t level, uint32_t ramp_ms);
+
+/**
+ * Move the output to level; ramp_ms refers to a full 0 <-> max transition.
+ * PPK2 marker D2 (DEBUG level 3) is high for the whole change incl. the fade
+ * (the PWM fade waits until done, LEDC_FADE_WAIT_DONE).
+ */
 static void light_apply_level(uint8_t level, uint32_t ramp_ms)
+{
+    debug_marker_set(DEBUG_MARKER_LIGHT, true);
+    light_apply_level_impl(level, ramp_ms);
+    debug_marker_set(DEBUG_MARKER_LIGHT, false);
+}
+
+static void light_apply_level_impl(uint8_t level, uint32_t ramp_ms)
 {
     if (level == s_level) {
         return;
