@@ -104,7 +104,15 @@ LEAVE (Reset, z. B. "Remove" in Z2M) ──► Pairing-Fenster
 
 **Identify:** Ein Identify-Befehl setzt das Attribut `IdentifyTime`. Ich glaube es könnte so sein: Der Stack meldet das als `SET_ATTR_VALUE` und eventuell auch das sekündliche Herunterzählen. Belegt ist das nicht. Deshalb startet das Blinken nur, wenn der Wert steigt; fallende Werte lösen es nicht erneut aus. Im Log erscheint `IDENTIFY_CLUSTER: IdentifyTime N s`. Fehlt diese Zeile beim Identify aus Z2M, kommt der Befehl auf einem anderen Weg an; dann die `ZCL action`-Zeilen ansehen.
 
-Lokales Schalten (Taster, Z5) läuft über `on_off_cluster_set_state()`. Die Funktion setzt das Attribut unter dem Zigbee-Lock. Ob Z2M den neuen Zustand per Report erfährt, hängt von der Reporting-Konfiguration ab, die Z2M beim Interview einrichtet (Ziel Z2). Auf Hardware prüfen.
+Lokales Schalten (Taster, Z5) läuft über `on_off_cluster_set_state()`. Die Funktion setzt das Attribut unter dem Zigbee-Lock und schickt danach sofort einen **Report Attributes** (`ezb_zcl_report_attr_cmd_req`) für OnOff direkt an den Coordinator (Kurzadresse 0x0000, Endpoint 1, `ZB_COORDINATOR_*` in `zigbee_config.h`).
+
+- **Grund:** Nur mit `ezb_zcl_set_attr_value()` kam ein Tastendruck in HA nicht an (beobachtet am 2026-11-10). Ob der Setter allein einen Report auslöst, ist in esp-zigbee-sdk 2.0.5 nicht dokumentiert. Weder `zcl_common.h` noch `docs/en/user-guide/zcl_general_report.rst` sagen dazu etwas.
+- **Endpoint 1:** zigbee-herdsman registriert Endpoint 1 als HA-Endpoint des Coordinators. Belegt ist das so:
+  - ember: `src/adapter/ember/adapter/endpoints.ts`, `FIXED_ENDPOINTS`, „primary network“ `endpoint: 1`.
+  - z-stack: `src/adapter/z-stack/adapter/endpoints.ts`, erster Eintrag `endpoint: 1, appprofid: 0x0104`.
+  - deconz: Fallback `[1]`.
+- **Auswertung in Z2M:** `fz.on_off` verarbeitet `attributeReport` für `genOnOff` (zigbee-herdsman-converters `src/converters/fromZigbee.ts`). Alle Quellen wurden am 2026-11-10 auf dem Branch master gelesen.
+- **Einschränkung:** Laut `zcl_general_cmd.h` hängt der Inhalt des Reports von der Reporting-Konfiguration ab. Fehlt dafür der Eintrag, schreibt die Firmware eine Warnung ins Log. Ob der Report auf der Hardware ankommt, ist **ungetestet**.
 
 ## Zigbee2MQTT
 

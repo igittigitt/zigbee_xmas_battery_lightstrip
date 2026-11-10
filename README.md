@@ -44,6 +44,7 @@ Jedes Gerät einzeln kalibrieren. Der Wert eines anderen Boards passt nicht.
 ### Ablauf
 
 1. **Firmware mit Akkumessung bauen.** In `idf.py menuconfig` → *Zigbee Light* entweder *DEBUG level* = **0: production** wählen, oder bei Level 1/2 zusätzlich **„Measure the battery via ADC in DEBUG builds“** einschalten. Bei Level 1/2 ohne diese Option wird der Akkustand nur simuliert, und es gibt keinen Messwert. Flashen, danach USB abziehen.
+   ⚠️ In Level 0 (und 3) ist der Tiefentladeschutz aktiv: Unter **3,0 V** geht das Gerät in den Notschlaf und läuft erst ab 3,6 V wieder an. Messpunkte unter 3,0 V deshalb mit Level 1/2 aufnehmen.
 2. **Den aktuellen Faktor notieren**, also den Wert von `BATTERY_CAL_PERMILLE` in `battery_config.h` (beim ersten Mal 1000). Das ist **CAL_alt**.
 3. **Aufbauen:** Quelle an 5V-Pin und GND, UART-Adapter anschließen, `idf.py -p COMx monitor` starten (COMx = Port des Adapters).
 4. **Messen:** Reset-Taste drücken. Das Gerät misst beim Start und danach nur alle 15 min. Im Log erscheint:

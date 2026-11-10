@@ -24,6 +24,9 @@ static adc_cali_handle_t s_cali;    // NULL = not initialised
 
 esp_err_t battery_init(void)
 {
+    if (s_cali) {
+        return ESP_OK;  // already initialised (battery guard at boot, then power config cluster)
+    }
     ESP_RETURN_ON_ERROR(adc_oneshot_io_to_channel(BATTERY_ADC_GPIO, &s_unit, &s_channel), TAG,
                         "GPIO %d is no ADC pin", BATTERY_ADC_GPIO);
 

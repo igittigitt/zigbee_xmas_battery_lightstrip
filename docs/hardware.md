@@ -84,6 +84,11 @@ Label auf dem Modul laut Nutzer „L006AJSA“; im Handel heißt es **LD06AJSA**
 - **Abschaltstrom** bei CE = 0 V: ≤ 1 µA (S. 4, I_VCC2). Ruhestrom eingeschaltet 200–320 µA (I_VCC1).
 - **Offener CE leuchtet voll** (Beobachtung des Nutzers, 2026-11-08). Der IC selbst hat laut Datenblatt keinen nennenswerten Pull-up (±1 µA). Ich glaube es könnte so sein: Das Modul zieht CE über einen Widerstand an VCC (Datenblatt-Applikation: CE direkt an VCC, S. 2). Wert [UNBELEGT].
 - **CE an GPIO 10 (PWM) blieb nach „aus“ an, an GPIO 11 (einfacher Ausgang) nicht** (Nutzer, 2026-11-08). Ursache vermutlich in der Firmware: LEDC-Timer wurde direkt nach `ledc_stop()` pausiert, bevor der Ruhepegel übernommen war. Korrektur: `LIGHT_PWM_STOP_LATCH_MS` in `light_config.h` (2 PWM-Perioden warten vor `ledc_timer_pause()`); **am Gerät bestätigt** (2026-11-08). Der Mechanismus (Übernahme erst beim Timer-Überlauf) ist weiterhin nicht durch Doku belegt.
+- **Befund 2026-11-09 (Nutzer):** Auf der Modulplatine ist **kein Pull-up an CE erkennbar**, nur das Poti und ein Widerstand dazu. Ich glaube es könnte so sein: Der offene CE-Eingang (CMOS, ±1 µA) floatet und wird als High erkannt. Die folgenden zwei Punkte zum Pull-up sind damit vermutlich gegenstandslos.
+- **Fail-safe (Z8):** Pull-down **100 kΩ von CE nach GND**. Dann ist die KSQ aus, wenn der ESP aus, im Reset oder im Deep Sleep ist.
+  - Rechnung mit Datenblattwerten: höchstens 1 µA × 100 kΩ = 0,1 V < V_CEL 0,6 V.
+  - Bei CE High fließen 3,3 V / 100 kΩ = 33 µA.
+  - Am Gerät noch nicht umgesetzt.
 - **Folge für den Akku:** Solange der ESP CE auf Low hält, fließt durch diesen Pull-up dauerhaft VCC / R_pu – auch im Light Sleep. Beispiel (Rechnung, R_pu angenommen): 4,2 V / 10 kΩ = 420 µA. Messen: Strom von CE nach GND bei eingeschaltetem Modul (Multimeter im µA-Bereich).
 - **Pull-up am ESP-Pin:** VCC (Akku bis 4,2 V) liegt über 3,3 V. Über den Pull-up fließt dann Strom in GPIO 10, begrenzt durch R_pu. [UNBELEGT], ob unbedenklich – sicherer ist, den Pull-up zu entfernen.
 
@@ -166,8 +171,19 @@ Erwarteter Ruhestrom im Light Sleep (Typwerte, **durch Messung zu bestätigen**)
 | Original | [UNBELEGT], s. o. (≤ 1 µA bis 2,5 mA je nach Quelle) | 100 µA (ME6217 typ.) | 85 µA | ≥ 185 µA + WS2812 – messen (Szenario S3/M2) |
 | Nach Umbau | – | ≈ 2 µA | 85 µA | ≈ 90 µA |
 | **Gemessen Original (2026-11-09)** | bestückt | ME6217 | DEBUG-Stufe 2, Light Sleep laut `esp_pm_dump_locks()` 98 % | **≈ 847 µA** zwischen den Polls (PPK2, 3,7 V, UART-Adapter angeschlossen) |
+| **Gemessen Zwischenstand (2026-11-09)** | **ausgelötet** | ME6217 | Light Sleep | **≈ 373 µA** zwischen den Polls (PPK2) |
 
-Ich glaube es könnte so sein: Die Differenz von ≈ 660 µA zur Summe der belegten Posten (≈ 185 µA) stammt überwiegend von der WS2812. Das läge in der Größenordnung der 0,6 mA, die WorldSemi für WS2812B-V5/W angibt. Der UART-Adapter ist ausgeschlossen: Ohne ihn lag der Ruhestrom bei 863 µA, mit ihm bei 852 µA (gleiche Firmware). Ob es wirklich die WS2812 ist, zeigt erst die Messung nach dem Auslöten.
+Die WS2812 kostete damit **≈ 490 µA** Ruhestrom. Das ist die Differenz von 863–866 µA (Ruhephase mit WS2812, ohne UART-Adapter) zu 373 µA. Sie gilt nur unter der Annahme, dass Firmware und Versorgungsspannung bei beiden Messungen gleich waren. Der UART-Adapter ist als Ursache ausgeschlossen: Ohne ihn lag der Ruhestrom bei 863 µA, mit ihm bei 852 µA (gleiche Firmware). Die Größenordnung passt zu den 0,6 mA, die WorldSemi für WS2812B-V5/W angibt. Für die verbaute Bauform 0807 gibt es weiterhin keinen Herstellerwert.
+
+Nach dem Auslöten liegt der Ruhestrom noch ≈ 190 µA über der Summe der belegten Typwerte (ME6217 100 µA + ESP32-H2 85 µA ≈ 185 µA). Ungeklärt [OFFEN].
+
+Ausgeschlossen sind:
+- **Periodische Spitzen:** In einem 1,7-s-Fenster zwischen zwei Polls gibt es keine (Mittel 374,7 µA, Max 498 µA). Der Grundstrom selbst liegt also bei ≈ 375 µA.
+- **KSQ-Modul:** Mit WS2812 lag der Ruhestrom mit angeschlossener KSQ (Licht aus) bei 0,85–0,86 mA, ohne sie bei 852–863 µA.
+
+Verbleibende Kandidaten:
+- **ME6217:** Ruhestrom bis 130 µA (max.) statt 100 µA typ. Der LDO-Tausch trennt diesen Anteil ab.
+- **Firmware:** Die 85 µA aus dem Datenblatt gelten für alle GPIOs hochohmig und Peripherietakte aus. Flash- und Peripherie-Abschaltung sind in der `sdkconfig` aktiv (`CONFIG_ESP_SLEEP_POWER_DOWN_FLASH`, `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP`). **Bestätigt (2026-11-09):** Ohne LEDC sinkt der Ruhestrom auf **127 µA**. Die LEDC-Konfiguration mit `KEEP_ALIVE` kostet damit ≈ 248 µA, auch bei Licht aus ([known-issues](known-issues.md) 18). Mit 127 µA liegt das Board unter der Summe der Typwerte von ≈ 185 µA, der ME6217 zieht also vermutlich weniger als 100 µA. Das ist nicht getrennt gemessen. Abhilfe in der Firmware siehe [power-management.md](power-management.md#zusammenspiel-mit-dem-licht-modul).
 
 Hinzu kommen Spannungsteiler der Akkumessung (~2 µA), Leckstrom des abgeschalteten LED-Pfads und die Zigbee-Polls.
 

@@ -74,6 +74,16 @@
 #endif
 
 /**
+ * Sleep current diagnosis: PWM backend without LEDC, light stays off (Kconfig
+ * ZL_DEBUG_DIAG_NO_LEDC, DEBUG level 2/3), see light_driver_pwm.c.
+ */
+#if CONFIG_ZL_DEBUG_DIAG_NO_LEDC
+#define APP_DEBUG_DIAG_NO_LEDC 1
+#else
+#define APP_DEBUG_DIAG_NO_LEDC 0
+#endif
+
+/**
  * PPK2 event markers on GPIOs and silenced application log (DEBUG level 3,
  * current measurement), see main/debug_marker.h.
  */
@@ -88,6 +98,17 @@
 #define APP_BATTERY_ADC 1
 #else
 #define APP_BATTERY_ADC 0
+#endif
+
+/**
+ * Deep discharge protection (goal Z8, battery_guard.c): in production and
+ * DEBUG level 3. Not in level 1/2, where the ADC is optional and used for
+ * calibration on USB, also below the shutdown threshold.
+ */
+#if !CONFIG_ZL_DEBUG || CONFIG_ZL_DEBUG_LEVEL_3
+#define APP_BATTERY_GUARD 1
+#else
+#define APP_BATTERY_GUARD 0
 #endif
 
 /**

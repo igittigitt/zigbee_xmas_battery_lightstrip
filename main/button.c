@@ -2,11 +2,12 @@
  * Local button (goal Z5), see button.h.
  *
  * Idle: the task blocks on a notification, the GPIO interrupt (low level) is
- * enabled and the pin is a light sleep wakeup source. ESP32-H2: "Any IO can be
- * used as the external input to wake up the chip from Light-sleep"
- * (IDF v5.5.4 docs, api-reference/system/sleep_modes.rst, "GPIO Wakeup").
- * gpio_wakeup_enable() also keeps the pad configuration during sleep
- * (gpio_sleep_sel_dis with CONFIG_PM_SLP_DISABLE_GPIO, esp_driver_gpio/src/gpio.c).
+ * enabled and the pin is an EXT1 light sleep wakeup source (works with the
+ * peripheral power domain powered down, IDF v5.5.4 sleep_modes.rst "External
+ * Wakeup (ext1)"). On ESP32-H2 the sleep code routes the pad to digital, keeps
+ * the input enabled and holds the pad (ext1_wakeup_prepare(), sleep_modes.c);
+ * a held input still reads the pin level (gpio_hold_en(), driver/gpio.h), so
+ * the GPIO interrupt and polling keep working after wakeup.
  *
  * Pressed: the ISR disables the interrupt (level triggered, would fire
  * continuously) and wakes the task, which polls until release. While the pin
@@ -118,8 +119,12 @@ esp_err_t button_init(void)
         return err;
     }
     ESP_RETURN_ON_ERROR(gpio_isr_handler_add(BUTTON_GPIO, button_isr, NULL), TAG, "isr add");
-    ESP_RETURN_ON_ERROR(gpio_wakeup_enable(BUTTON_GPIO, GPIO_INTR_LOW_LEVEL), TAG, "wakeup enable");
-    ESP_RETURN_ON_ERROR(esp_sleep_enable_gpio_wakeup(), TAG, "sleep gpio wakeup");
+    // EXT1 instead of the GPIO wakeup: the GPIO wakeup "is not available if the
+    // peripheral power domain is powered down in sleep" (esp_sleep_enable_gpio_wakeup,
+    // CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP). EXT1 is handled by the LP
+    // system; GPIO 7-14 are the EXT1-capable LP pads (soc_caps.h, ESP32-H2).
+    ESP_RETURN_ON_ERROR(esp_sleep_enable_ext1_wakeup_io(1ULL << BUTTON_GPIO, ESP_EXT1_WAKEUP_ANY_LOW),
+                        TAG, "ext1 wakeup");
 
     ESP_LOGI(TAG, "Button on GPIO %d (short = toggle, %d s = factory reset + pairing)",
              BUTTON_GPIO, BUTTON_LONG_PRESS_MS / 1000);

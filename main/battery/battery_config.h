@@ -84,6 +84,50 @@
         { .mv = 4200, .percent = 100 },                     \
     }
 
+/* ---- Deep discharge protection (goal Z8), battery_guard.c ----
+ *
+ * Thresholds given by the user (2026-11-09). They apply to every measurement,
+ * also under load (light on): the voltage then reads lower, so the reaction is
+ * earlier, i.e. on the safe side. A BMS in the battery pack is the last
+ * hardware protection below these thresholds.
+ */
+
+/** Below this voltage: warning, the chain flashes BATTERY_WARN_FLASH_COUNT times (inverse if on). */
+#define BATTERY_WARN_MV                 3300
+
+/**
+ * Below this voltage: light off, emergency deep sleep. Measured on the
+ * prototype (ME6217, 2026-11-08): stable down to 3.00 V, reboot loop from 2.9 V.
+ */
+#define BATTERY_SHUTDOWN_MV             3000
+
+/**
+ * After an emergency deep sleep the device only resumes from this voltage on
+ * (battery charged); below it, it goes back to deep sleep. Own choice: clearly
+ * above BATTERY_WARN_MV, so a resting cell that recovered a little does not
+ * cycle between running and emergency sleep.
+ */
+#define BATTERY_RESUME_MV               3600
+
+/**
+ * Timer wakeup in emergency deep sleep to check whether the battery has been
+ * charged (besides the button). Own choice; a wakeup costs one boot plus one
+ * ADC measurement.
+ */
+#define BATTERY_EMERGENCY_WAKE_MS       (6ULL * 60 * 60 * 1000)
+
+/** Warning pattern: number of flashes, flash and pause duration (own choice). */
+#define BATTERY_WARN_FLASH_COUNT        3
+#define BATTERY_WARN_FLASH_MS           200
+#define BATTERY_WARN_PAUSE_MS           300
+
+/**
+ * Time for the light to ramp down before the emergency deep sleep. Covers
+ * LIGHT_RAMP_MS (measured ramp currently ~2 s instead of 1 s,
+ * docs/known-issues.md 17) plus the PWM stop latch.
+ */
+#define BATTERY_SHUTDOWN_LIGHT_WAIT_MS  3000
+
 /* ---- Consumption model, remaining time (goal Z14), battery_model.c ----
  *
  * All current and capacity values are PLACEHOLDERS [UNBELEGT] until they are

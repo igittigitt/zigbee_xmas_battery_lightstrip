@@ -11,6 +11,7 @@
 #include "radio_trace.h"
 #include "debug_marker.h"
 #include "battery_model.h"
+#include "battery_guard.h"
 #include "cluster_manager.h"
 
 static const char *TAG = "MAIN";
@@ -57,6 +58,12 @@ void app_main(void)
 
     // Light chain driver (backend selected by DEBUG), light is off afterwards
     ESP_ERROR_CHECK(light_init());
+
+    // Deep discharge protection (goal Z8): back to emergency deep sleep before
+    // the radio starts if the battery is too low (does not return then)
+    if (battery_guard_boot_check() != ESP_OK) {
+        ESP_LOGE(TAG, "Battery check at startup failed, continuing");
+    }
 
     // BOOT button (goal Z5), active in every state incl. light sleep; without it
     // a device stuck in rejoin could only be re-paired by erasing the flash

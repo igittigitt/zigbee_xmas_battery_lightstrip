@@ -18,6 +18,7 @@ idf_component_register(
         "light/light_driver_pwm.c"
         "light/light_driver_debug.c"
         "battery/battery_model.c"
+        "battery/battery_guard.c"
         "radio_trace.c"
         "debug_marker.c"
     INCLUDE_DIRS

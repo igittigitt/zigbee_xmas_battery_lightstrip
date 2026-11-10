@@ -8,6 +8,7 @@
 #include "power_config_cluster.h"
 #include "battery.h"
 #include "battery_model.h"
+#include "battery_guard.h"
 #include "battery_config.h"
 #include "light.h"
 
@@ -88,6 +89,8 @@ esp_err_t power_config_cluster_update(void)
         set_attr(EZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, zcl_percent(s_percent));
     }
     esp_zigbee_lock_release();
+
+    battery_guard_check(mv);    // goal Z8: warning flashes or emergency shutdown
     return ESP_OK;
 }
 
@@ -126,7 +129,17 @@ static void initial_values(uint8_t *voltage, uint8_t *percentage)
     }
     uint32_t mv = 0;
     bool at_rest = false;
-    if (measure(&mv, &at_rest) == ESP_OK) {
+    if (APP_DEBUG_MARKERS) {
+        // DEBUG level 3 silences the log (debug_marker_init()); let the boot
+        // measurement through once (UART0 TX GPIO 24), then silent again.
+        // A tag level overrides the default level "*" (esp_log_level_set()).
+        esp_log_level_set(TAG, ESP_LOG_INFO);
+    }
+    const esp_err_t measure_err = measure(&mv, &at_rest);
+    if (APP_DEBUG_MARKERS) {
+        esp_log_level_set(TAG, ESP_LOG_NONE);
+    }
+    if (measure_err == ESP_OK) {
         *voltage = zcl_voltage(mv);
         if (at_rest) {
             battery_model_boot_voltage(mv);     // full cell: reset the remaining-time model (Z14)

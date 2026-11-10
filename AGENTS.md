@@ -39,18 +39,19 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/zigbee_device.c` | Stack-Init, Commissioning (Pairing-Fenster, Rejoin-Backoff), Signal-Handler; API `zigbee_device_start_pairing/_factory_reset/_is_joined` |
 | `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „Dimmable Light“ + Zusatzcluster und registriert ihn |
 | `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `level` ↔ Helligkeit, `identify`, `power_config` Akku) |
+| `main/battery/battery_guard.c` | Tiefentladeschutz (Z8): < 3,3 V Warnblinken bei jeder Messung, < 3,0 V Licht aus + Deep Sleep (Wecken Taster/6 h, weiter ab 3,6 V); Startprüfung vor dem Zigbee-Start. Aktiv in Level 0 und 3 (`APP_BATTERY_GUARD`) |
 | `main/battery/battery_model.c` | Verbrauchsmodell für die Restlaufzeit (Z14): Zählung bei jeder Pegeländerung (`battery_model_set_load` aus `light.c`), stündlicher Timer, Zähler im NVS. Ströme in `battery_config.h` sind Platzhalter |
 | `main/clusters/battery_runtime_cluster.c` | Herstellerspezifischer Cluster `0xFC00` (RemainingOnTime, RemainingDays) |
 | `z2m/zl-lightchain.mjs` | Zigbee2MQTT External Converter (nötig, damit die Restlaufzeit in HA erscheint) |
 | `main/battery/battery.c` | Akkuspannung per ADC (Unit nur während der Messung, wegen Sleep-Power-Domänen), Ruhespannung → %; Konstanten in `battery_config.h` |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |
-| `main/button.c` | BOOT-Taster GPIO 9 (Z5): kurz = Toggle (nur verbunden), ≥ 5 s = Factory Reset + Pairing; immer aktiv, weckt aus Light Sleep |
+| `main/button.c` | BOOT-Taster GPIO 9 (Z5): kurz = Toggle (nur verbunden), ≥ 5 s = Factory Reset + Pairing; immer aktiv, weckt per EXT1 aus Light Sleep (auch bei abgeschalteter Peripherie-Domäne) |
 | `main/debug_marker.c` | Nur DEBUG Level 3 (`APP_DEBUG_MARKERS`): PPK2-Marker auf GPIO 2–5 (D0 wach/Sleep per `esp_pm`-Sleep-Callbacks, D1 Zigbee, D2 Licht, D3 Akkumessung), Log stumm; sonst leere Inline-Stubs |
 | `main/radio_trace.c` | Nur DEBUG (`ZL_DEBUG_RADIO_TRACE`): Beacons/Join-Frames mit LQI/RSSI loggen, per Linker-`--wrap` der 802.15.4-Treiber-Callbacks (`main/CMakeLists.txt`) |
 | `main/power_management.c` | `esp_pm` (automatischer Light Sleep), DEBUG-Sleep-Bericht |
 | `main/Kconfig.projbuild`, `main/app_config.h` | Build-Schalter **DEBUG level** 0/1/2/3 (`CONFIG_ZL_DEBUG_LEVEL_x` → `APP_DEBUG_LEVEL`, `APP_DEBUG` = Level ≥ 1). Debug-Abweichungen nur hierüber steuern, siehe [docs/setup-build.md](docs/setup-build.md#debug-schalter) |
 | `main/light/light.c` | Lichtsteuerung: Task, Rampen, API `light_set_on`/`light_fade_to` (nicht blockierend) |
-| `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `pwm` (Produktiv, LEDC + Boost-EN), `debug` (DEBUG: `ws2812` Onboard-LED + `pwm` parallel) |
+| `main/light/light_driver_*.c` | Backends hinter `light_driver_t`: `pwm` (Produktiv, LEDC + Boost-EN; PWM nur bei Rampe/gedimmt mit PM-Lock ohne Sleep; aus und voll = CE/EN statisch per `gpio_hold_en`, Sleep erlaubt), `debug` (DEBUG: `ws2812` Onboard-LED + `pwm` parallel) |
 ## Konventionen
 
 - Neue Cluster nach dem Muster in [docs/extending.md](docs/extending.md): `<name>_cluster.[ch]` in `main/clusters/`, Funktionen `<name>_cluster_add/_update/_attribute_changed`, Registrierung in `cluster_manager.c`, Routing in `attribute_handler.c`, Quelle in `main/CMakeLists.txt` eintragen.

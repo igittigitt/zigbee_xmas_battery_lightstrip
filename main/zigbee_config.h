@@ -19,6 +19,16 @@
 #define ZB_ENDPOINT                     1
 
 /**
+ * Destination of the explicit OnOff report after a local switch (button, Z5):
+ * the coordinator always has the short address 0x0000; zigbee-herdsman
+ * (Zigbee2MQTT) uses endpoint 1 as its HA endpoint (ember adapter/endpoints.ts
+ * FIXED_ENDPOINTS "primary network" endpoint 1, z-stack adapter/endpoints.ts
+ * first entry endpoint 1 profile 0x0104, deconz fallback [1]).
+ */
+#define ZB_COORDINATOR_SHORT_ADDR       0x0000
+#define ZB_COORDINATOR_ENDPOINT         1
+
+/**
  * Basic cluster ManufacturerName / ModelIdentifier (plain C strings, max. 32
  * characters, converted to ZCL strings at runtime). Zigbee2MQTT identifies the
  * device by these values (external converter).

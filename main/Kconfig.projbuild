@@ -91,6 +91,19 @@ menu "Zigbee Light"
             chip out of light sleep. PM_PROFILING adds some run-time overhead
             (Kconfig help), so only for diagnosis.
 
+    config ZL_DEBUG_DIAG_NO_LEDC
+        bool "Diagnosis: do not use LEDC, light stays off (DEBUG level 2/3)"
+        depends on ZL_DEBUG_LEVEL_2 || ZL_DEBUG_LEVEL_3
+        default n
+        help
+            Sleep current diagnosis (docs/known-issues.md, RC_FAST in sleep):
+            the PWM backend does not configure the LEDC timer/channel. The
+            PWM pin (CE of the LED driver) and the enable pin are plain GPIO
+            outputs held low, also in light sleep. Zigbee commands are accepted
+            but the light stays dark. Compare the sleep current with a normal
+            build to see what the LEDC configuration (RC_FAST,
+            LEDC_SLEEP_MODE_KEEP_ALIVE) costs. Never for production.
+
     config ZL_DEBUG_BATTERY_ADC
         bool "Measure the battery via ADC in DEBUG builds"
         depends on ZL_DEBUG && !ZL_DEBUG_LEVEL_3

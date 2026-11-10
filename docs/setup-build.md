@@ -40,7 +40,7 @@ Konfiguration:
 - `APP_DEBUG_LIGHT`: 1 nur bei Level 1 (Onboard-LED).
 - `APP_DEBUG_ZIGBEE`: 1 nur bei Level 1 (Zigbee-Diagnose im Log).
 - `APP_LIGHT_SLEEP`: 0 nur bei Level 1.
-- `APP_DEBUG_MARKERS`: 1 nur bei Level 3 (PPK2-Marker, Log stumm).
+- `APP_DEBUG_MARKERS`: 1 nur bei Level 3 (PPK2-Marker, Log stumm). Ausnahme: Die Akkumessung beim Start wird einmal ausgegeben (`POWER_CFG_CLUSTER: Battery … mV`, UART0 TX GPIO 24). Mit USB als Versorgung misst sie die USB-Spannung, nicht die des PPK2.
 - `APP_BATTERY_ADC`: 1 bei Level 0 und 3, bei Level 1/2 nur mit `CONFIG_ZL_DEBUG_BATTERY_ADC`.
 
 | | Level 1: allgemeine Tests | Level 2: Energiespar-Tests | Level 3: PPK2-Strommessung | Level 0: Produktiv |
@@ -61,7 +61,7 @@ Umschalten:
 - Aktuell steht `CONFIG_ZL_DEBUG_LEVEL_1=y` in [sdkconfig.defaults](../sdkconfig.defaults) (Prototyp-Phase).
 - Ein vorhandenes `sdkconfig` hat Vorrang vor den Defaults. Zum Umschalten daher `idf.py menuconfig` → *Zigbee Light* → *DEBUG level*, oder `sdkconfig` löschen und die Defaults ändern.
 - **Von Level 1 auf 2 nur per menuconfig oder mit neuem `sdkconfig`:** `USJ_NO_AUTO_LS_ON_CONNECTION` setzt nur Level 1 per `select`. Ein bestehendes `sdkconfig` behält den Wert aber unter Umständen auch nach dem Umschalten. Dann bleibt die CPU in Level 2 wach, solange USB verbunden ist. Das Log meldet das beim Start („light sleep is SIMULATED“). In Level 2 ohnehin kein USB anschließen.
-- Test-Build einer anderen Stufe, ohne die lokale `sdkconfig` anzufassen (separates Build-Verzeichnis). `release.defaults` soll `CONFIG_ZL_DEBUG_LEVEL_0=y` enthalten; **die Datei fehlt noch im Repo**:
+- Test-Build einer anderen Stufe, ohne die lokale `sdkconfig` anzufassen (separates Build-Verzeichnis). Für den Produktiv-Build (Level 0) liegt [release.defaults](../release.defaults) im Repo (seit 2026-11-09):
   ```bash
   idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;release.defaults" build
   ```
@@ -72,6 +72,10 @@ Umschalten:
   idf.py -B build_l3 -D SDKCONFIG=build_l3/sdkconfig -p COMx flash
   ```
   In der PowerShell das Argument in Anführungszeichen setzen: `-D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;level3.defaults"`. Die Verzeichnisse `build_*/` sind gitignored.
+- **Diagnose-Schalter `ZL_DEBUG_DIAG_NO_LEDC`** (Level 2/3, Standard aus, *menuconfig → Zigbee Light*): Das PWM-Backend konfiguriert kein LEDC. GPIO 10 (CE der KSQ) und GPIO 11 (EN) sind einfache Ausgänge auf Low, auch im Sleep, und das Licht bleibt aus. Er dient dazu, den Ruhestrom-Anteil der LEDC-Konfiguration (RC_FAST, `LEDC_SLEEP_MODE_KEEP_ALIVE`, [known-issues](known-issues.md) 18) per Vergleichsmessung zu bestimmen. Nie produktiv verwenden. Beispiel mit einer zusätzlichen Defaults-Datei, die nur `CONFIG_ZL_DEBUG_DIAG_NO_LEDC=y` enthält:
+  ```bash
+  idf.py -B build_l3diag -D SDKCONFIG=build_l3diag/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;level3.defaults;diag_noledc.defaults" build
+  ```
 
 **Welche Firmware läuft?** Maßgeblich ist die Zeile `app_init: ELF file SHA256:` im Startlog. Sie mit dem Hash des Builds vergleichen, z. B. `sha256sum build_l3/zigbee_node.elf` (die ersten 9 Zeichen). Die Zeile `app_init: Compile time:` taugt dafür nicht: Am 2026-11-09 zeigte sie nach dem Flashen eines neuen inkrementellen Builds noch die Zeit eines älteren Builds, obwohl der SHA256 bewies, dass die neue Firmware lief. Die Monitor-Warnung „Checksum mismatch between flashed and built applications“ bedeutet nur, dass der Monitor mit einem anderen Build-Verzeichnis vergleicht. `idf.py monitor` deshalb mit denselben `-B …`/`-D SDKCONFIG=…`-Angaben wie beim Flashen starten.
 

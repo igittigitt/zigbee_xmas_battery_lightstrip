@@ -130,6 +130,40 @@ void on_off_cluster_attribute_changed(const ezb_zcl_attribute_t *attribute)
     }
 }
 
+/*
+ * Send the OnOff attribute to the coordinator right away (Zigbee lock held).
+ * Whether ezb_zcl_set_attr_value() alone triggers a report is not documented
+ * (esp-zigbee-sdk 2.0.5 zcl_common.h / zcl_general_report.rst), and a local
+ * switch was not shown in Home Assistant. The explicit report goes directly to
+ * the coordinator, so it does not depend on a binding. Note from
+ * zcl_general_cmd.h: "The actual attributes reported depend on the reporting
+ * configuration"; a missing reporting entry is therefore logged.
+ */
+static void report_on_off(void)
+{
+    if (ezb_zcl_reporting_info_find(ZB_ENDPOINT, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_CLUSTER_SERVER,
+                                    EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, EZB_ZCL_STD_MANUF_CODE)
+        == EZB_ZCL_INVALID_REPORTING_INFO) {
+        ESP_LOGW(TAG, "No reporting entry for OnOff, report may not be sent");
+    }
+
+    ezb_zcl_report_attr_cmd_t cmd = {
+        .cmd_ctrl = {
+            .dst_addr = EZB_ADDRESS_SHORT(ZB_COORDINATOR_SHORT_ADDR),
+            .dst_ep = ZB_COORDINATOR_ENDPOINT,
+            .src_ep = ZB_ENDPOINT,
+            .cluster_id = EZB_ZCL_CLUSTER_ID_ON_OFF,
+            .manuf_code = EZB_ZCL_STD_MANUF_CODE,
+            .fc.direction = EZB_ZCL_CMD_DIRECTION_TO_CLI,
+        },
+        .payload.attr_id = EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID,
+    };
+    ezb_err_t err = ezb_zcl_report_attr_cmd_req(&cmd);
+    if (err != EZB_ERR_NONE) {
+        ESP_LOGE(TAG, "OnOff report failed: 0x%04x", (unsigned)err);
+    }
+}
+
 esp_err_t on_off_cluster_set_state(bool on)
 {
     uint8_t value = on ? 1 : 0;
@@ -138,6 +172,9 @@ esp_err_t on_off_cluster_set_state(bool on)
     ezb_zcl_status_t status = ezb_zcl_set_attr_value(ZB_ENDPOINT, EZB_ZCL_CLUSTER_ID_ON_OFF,
                                                      EZB_ZCL_CLUSTER_SERVER, EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID,
                                                      EZB_ZCL_STD_MANUF_CODE, &value, false);
+    if (status == EZB_ZCL_STATUS_SUCCESS) {
+        report_on_off();
+    }
     esp_zigbee_lock_release();
 
     if (status != EZB_ZCL_STATUS_SUCCESS) {

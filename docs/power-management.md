@@ -30,8 +30,46 @@ Aus dem Treiber-Quellcode, ESP-IDF v5.5.4, `components/esp_driver_ledc/src/ledc.
 
 - Mit `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP` registriert der LEDC-Treiber ein Sleep-Retention-Modul (Z. 435–449). Der Kommentar dort: „retention module should still be inited to avoid TOP PD“.
 - Für einen Kanal mit `LEDC_SLEEP_MODE_KEEP_ALIVE` legt der Treiber **kein** Retention-Backup an (Z. 921–931). Die Peripherie-Domäne bleibt im Sleep also an, damit die PWM weiterläuft.
+- Gemessen (2026-11-09): Das gilt auch bei ausgeschaltetem Licht und kostet ≈ 248 µA ([known-issues.md](known-issues.md) 18).
 
-Ich glaube es könnte so sein: Das gilt, solange LEDC konfiguriert ist, also auch bei ausgeschaltetem Licht. Die Option spart dann im Produktiv-Build (PWM-Backend) weniger als erhofft. Messen, siehe [known-issues.md](known-issues.md).
+**Umsetzung seit 2026-11-09** ([light_driver_pwm.c](../main/light/light_driver_pwm.c)):
+
+Der LEDC-Kanal läuft mit `LEDC_SLEEP_MODE_NO_ALIVE_ALLOW_PD`; seine Register werden per Retention gesichert. Statische Zustände werden „geparkt“: Die PWM wird auf dem passenden Ruhepegel gestoppt, und PWM-Pin (GPIO 10) sowie EN (GPIO 11) werden per `gpio_hold_en()` gehalten. Beide sind LP-Pads; der Hold gilt laut `driver/gpio.h` auch bei „peripheral power-down in Light-sleep“.
+
+| Zustand | LEDC / Pins | Sleep |
+|---|---|---|
+| Licht aus | gestoppt auf Low, CE und EN Low gehalten | Light Sleep, Peripherie-Domäne darf abschalten |
+| **Volle Helligkeit** (Level 254) | gestoppt auf **High** (100 % statt Tastgrad 4095/4096), CE und EN High gehalten | Light Sleep, Kette leuchtet weiter |
+| Rampe (1 s an/aus) oder gedimmter Level | Hold gelöst, PWM läuft | **kein Light Sleep**: PM-Lock `light_pwm` (`ESP_PM_NO_LIGHT_SLEEP`) |
+
+Die Kette wird nur mit voller Helligkeit betrieben (Entscheidung Nutzer 2026-11-09); die Gesamthelligkeit stellt das Poti auf der KSQ ein. Die PWM dient nur den Rampen beim Ein- und Ausschalten. Sie sollen Stromspitzen vermeiden, und währenddessen ist die CPU ohnehin wach. Gedimmte Level (Z13) funktionieren weiter, halten den Chip aber wach (≈ 10 mA, gemessen).
+
+**Hold über einen Reset:** Laut `driver/gpio.h` bleibt der Hold auch über einen Reset erhalten. War das Licht vor einem Absturz voll an, bleibt die Kette deshalb bis zur Initialisierung des Treibers an; erst `pwm_init()` setzt CE und EN neu.
+
+Begründung war: Die Kette ist im Schnitt 8 h am Tag an und 16 h aus. Bei Licht aus zählt der Ruhestrom.
+
+**Gemessen 2026-11-09** (3,5 V, ohne LED-Kette): Bei Licht aus sind es 126,9 µA (vorher 374,7 µA), bei Licht an 10,27 mA (vorher 1,14 mA). **Rechnung pro Tag**, nur Elektronik ohne LED-Strom, mit 16 h aus und 8 h an, ohne Polls:
+
+| Variante | Licht aus | Licht an | Summe |
+|---|---|---|---|
+| `KEEP_ALIVE` (bisher) | 0,375 mA × 16 h = 6,0 mAh | 1,14 mA × 8 h = 9,1 mAh | **15,1 mAh** |
+| `NO_ALIVE_ALLOW_PD` + PM-Lock (jetzt) | 0,127 mA × 16 h = 2,0 mAh | 10,27 mA × 8 h = 82,2 mAh | **84,2 mAh** |
+
+Die Annahme „fällt kaum ins Gewicht“ war falsch, diese Variante war in der Tagessumme schlechter. Zum Vergleich: Die Kette selbst braucht bei 100 mA in 8 h ≈ 800 mAh (Rechnung). Deshalb seit 2026-11-09 die Park-Lösung oben.
+
+**Gemessen 2026-11-09** (3,5 V, KSQ ohne LED-Kette, Strom zwischen den Polls): Licht aus 126,9 µA, volle Helligkeit **413,3 µA**. Der Chip schläft bei voller Helligkeit. Die Differenz passt zum Eigenverbrauch des CN5711 bei CE High (I_VCC1 200–320 µA, [hardware.md](hardware.md#ksq-modul-ld06ajsa)). Rechnung pro Tag ohne Polls und Rampen:
+
+| Variante | Licht aus (16 h) | Licht an (8 h) | Summe |
+|---|---|---|---|
+| `KEEP_ALIVE` | 6,0 mAh | 9,1 mAh | 15,1 mAh |
+| Kein Sleep bei Licht an | 2,0 mAh | 82,2 mAh | 84,2 mAh |
+| **Park-Lösung (jetzt)** | 0,127 mA × 16 h = 2,0 mAh | 0,413 mA × 8 h = 3,3 mAh | **5,3 mAh** |
+
+Gedimmte Level halten den Chip wach (≈ 10 mA). Steht die gespeicherte Helligkeit (CurrentLevel) nicht auf 100 %, gilt das auch für „an“. Das ist am 2026-11-09 beim Test passiert, die Helligkeit stand noch von einer 50-%-Messung.
+
+**Folge für den Taster (Z5):** Der GPIO-Wakeup funktioniert bei abgeschalteter Peripherie-Domäne nicht (Warnung in `esp_sleep_enable_gpio_wakeup()`, IDF 5.5.4 `sleep_modes.c`). [button.c](../main/button.c) nutzt deshalb den **EXT1-Wakeup** (`esp_sleep_enable_ext1_wakeup_io`, `ESP_EXT1_WAKEUP_ANY_LOW`). Das geht nur an den LP-Pads GPIO 7–14 (`soc_caps.h`), GPIO 9 gehört dazu. Am Gerät ist das noch nicht geprüft.
+
+**Folge für die PPK2-Marker (Stufe 3):** GPIO 2–5 sind digitale Pads und behalten mit `gpio_sleep_sel_dis()` ihren Pegel. Ob das auch bei abgeschalteter Peripherie-Domäne gilt, ist [UNBELEGT]. Ein Hold ist im Sleep-Callback nicht möglich, weil `gpio_hold_en()` nicht im IRAM liegt. Im Sleep darum auf die Marker-Pegel achten.
 
 ## Akkumessung (Z7)
 
@@ -72,7 +110,7 @@ Die DEBUG-Stufen (siehe [setup-build.md](setup-build.md#debug-schalter)):
 | 802.15.4-Radio zwischen Keepalives | schläft | **[UNBELEGT]**. Für 1.x ergab eine Disassembly-Analyse der Bibliotheken, dass der Zigbee-Sleep-Pfad unabhängig von der CPU lief; für 2.x ist das nicht untersucht |
 | GPIOs mit `SleepSel=1` | Hardware schaltet auf Sleep-Konfiguration | **nicht nachgebildet**, dafür gibt es keine öffentliche API (`gpio_sleep_sel_en()`, `driver/gpio.h`). Stattdessen GPIO-Bericht im Log |
 | GPIOs mit `SleepSel=0` (Licht-Pins, `gpio_sleep_sel_dis`) | behalten Pegel | identisch |
-| LEDC `KEEP_ALIVE` / WS2812 | läuft weiter / hält Farbe | identisch |
+| LEDC / WS2812 | Rampe/gedimmt: kein Sleep (PM-Lock `light_pwm`), aus/voll: Pins gehalten / hält Farbe | identisch |
 | Ohne USB-Verbindung | – | Level 1: kein Sleep (PM-Lock); Level 2: **echter** Sleep |
 
 **Log-Ausgaben** (Tag `POWER_MGMT`, einmalig beim Start aus `power_management_report()`):

@@ -1,0 +1,6 @@
+# Additional Kconfig defaults for the production build (DEBUG level 0: PWM light
+# chain, automatic light sleep, battery measured via ADC), used on top of
+# sdkconfig.defaults in a separate build directory so the local sdkconfig stays
+# untouched (docs/setup-build.md):
+#   idf.py -B build_release -D SDKCONFIG=build_release/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;release.defaults" build
+CONFIG_ZL_DEBUG_LEVEL_0=y
