@@ -1,13 +1,14 @@
 #ifndef POWER_CONFIG_CLUSTER_H
 #define POWER_CONFIG_CLUSTER_H
 
+#include <stdint.h>
 #include "esp_err.h"
 #include "esp_zigbee.h"
 
 /**
  * @brief Add the Power Configuration cluster (server) to an endpoint.
  *
- * Attributes BatteryVoltage (0x0020, unit 100 mV) and
+ * Attributes BatteryVoltage (0x0020, unit 100 mV, rounded down) and
  * BatteryPercentageRemaining (0x0021, 0-200 = 0-100 %), both reportable.
  *
  * With battery measurement (APP_BATTERY_ADC: production, or DEBUG with
@@ -40,5 +41,16 @@ esp_err_t power_config_cluster_add(ezb_af_ep_desc_t ep_desc);
  * @return ESP_OK, or the error of the measurement (attributes unchanged)
  */
 esp_err_t power_config_cluster_update(void);
+
+/**
+ * @brief Last measured battery voltage in mV (exact, not in 100 mV steps).
+ *
+ * Used as initial value of the BatteryVoltageMv attribute in cluster 0xFC00,
+ * so power_config_cluster_add() must run before battery_runtime_cluster_add().
+ *
+ * @return Voltage in mV, or BATTERY_UNKNOWN_U16 (0xFFFF) if not measured yet
+ *         (no ADC in DEBUG, or measurement failed)
+ */
+uint16_t power_config_cluster_get_voltage_mv(void);
 
 #endif // POWER_CONFIG_CLUSTER_H

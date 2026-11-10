@@ -6,6 +6,7 @@
 #include "app_config.h"
 #include "zigbee_config.h"
 #include "power_config_cluster.h"
+#include "battery_runtime_cluster.h"
 #include "battery.h"
 #include "battery_model.h"
 #include "battery_guard.h"
@@ -24,10 +25,14 @@ static bool s_percent_valid;
 
 static esp_timer_handle_t s_measure_timer;
 
-/* mV -> ZCL BatteryVoltage (unit 100 mV, rounded; 0xFF is reserved for "unknown"). */
+/* Last measured battery voltage in mV, BATTERY_UNKNOWN_U16 = none yet (same writers as s_percent). */
+static uint16_t s_voltage_mv = BATTERY_UNKNOWN_U16;
+
+/* mV -> ZCL BatteryVoltage (unit 100 mV, rounded down so the value never
+ * exceeds the measurement; 0xFF is reserved for "unknown"). */
 static uint8_t zcl_voltage(uint32_t mv)
 {
-    uint32_t value = (mv + 50) / 100;
+    uint32_t value = mv / 100;
     return value >= POWER_CONFIG_VALUE_UNKNOWN ? POWER_CONFIG_VALUE_UNKNOWN - 1 : (uint8_t)value;
 }
 
@@ -57,6 +62,7 @@ static void percent_update(uint8_t measured)
 static esp_err_t measure(uint32_t *mv, bool *at_rest)
 {
     ESP_RETURN_ON_ERROR(battery_measure_mv(mv), TAG, "Battery measurement");
+    s_voltage_mv = *mv >= BATTERY_UNKNOWN_U16 ? BATTERY_UNKNOWN_U16 - 1 : (uint16_t)*mv;
     *at_rest = (light_get_level() == 0);
     if (*at_rest) {
         percent_update(battery_percent_from_mv(*mv));
@@ -85,6 +91,7 @@ esp_err_t power_config_cluster_update(void)
 
     esp_zigbee_lock_acquire(portMAX_DELAY);
     set_attr(EZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, zcl_voltage(mv));
+    battery_runtime_cluster_set_voltage(s_voltage_mv);     // exact mV in 0xFC00, errors are logged
     if (s_percent_valid) {
         set_attr(EZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, zcl_percent(s_percent));
     }
@@ -162,6 +169,11 @@ static void initial_values(uint8_t *voltage, uint8_t *percentage)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Battery measurement timer failed: %s", esp_err_to_name(err));
     }
+}
+
+uint16_t power_config_cluster_get_voltage_mv(void)
+{
+    return s_voltage_mv;
 }
 
 esp_err_t power_config_cluster_add(ezb_af_ep_desc_t ep_desc)

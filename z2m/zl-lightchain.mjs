@@ -28,21 +28,35 @@ export default {
             attributes: {
                 remainingOnTime: {name: 'remainingOnTime', ID: 0x0000, type: ZCL_UINT16},
                 remainingDays: {name: 'remainingDays', ID: 0x0001, type: ZCL_UINT16},
+                batteryVoltageMv: {name: 'batteryVoltageMv', ID: 0x0002, type: ZCL_UINT16},
             },
             commands: {},
             commandsResponse: {},
         }),
         light({powerOnBehavior: true, configureReporting: true}),
         identify({isSleepy: true}),
-        // Reporting thresholds: the battery() defaults are {min: '1_HOUR', max: 'MAX', change: 10}
-        // (modernExtend.ts). For batteryVoltage (unit 100 mV) change 10 means 1.0 V, i.e. reports
-        // practically only every 65000 s. Own choice: smallest ZCL step (100 mV / 1 %), at most
-        // hourly (the device measures every 15 min), at least every 4 hours.
+        // Battery %: reporting at least every 4 hours, at most hourly (the device measures every
+        // 15 min), smallest ZCL step 1 % (change 2, unit 0.5 %).
+        // Voltage: the standard genPowerCfg.batteryVoltage has only 100 mV steps, so battery()
+        // does not expose it (voltage: false publishes no `voltage` key, modernExtend.ts). The
+        // exact value comes from the own attribute 0xFC00/0x0002 below.
         battery({
-            voltage: true,
-            voltageReporting: true,
-            voltageReportingConfig: {min: '1_HOUR', max: '4_HOURS', change: 1},
+            voltage: false,
+            voltageReporting: false,
             percentageReportingConfig: {min: '1_HOUR', max: '4_HOURS', change: 2},
+        }),
+        numeric({
+            name: 'voltage',
+            label: 'Voltage',
+            cluster: RUNTIME_CLUSTER,
+            attribute: 'batteryVoltageMv',
+            // 65535 = unknown (not measured, e.g. DEBUG build without ADC)
+            description: 'Battery voltage, last measurement (with the light on: under load)',
+            unit: 'mV',
+            access: 'STATE_GET',
+            // change 10 = 10 mV; same timing as battery %
+            reporting: {min: '1_HOUR', max: '4_HOURS', change: 10},
+            entityCategory: 'diagnostic',
         }),
         numeric({
             name: 'remaining_light_hours',

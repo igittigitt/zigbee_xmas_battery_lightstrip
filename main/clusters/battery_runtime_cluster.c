@@ -3,6 +3,7 @@
 #include "ezbee/zcl/cluster/custom.h"
 #include "zigbee_config.h"
 #include "battery_runtime_cluster.h"
+#include "power_config_cluster.h"
 
 static const char *TAG = "BATT_RUNTIME_CLUSTER";
 
@@ -27,6 +28,11 @@ esp_err_t battery_runtime_cluster_add(ezb_af_ep_desc_t ep_desc)
                             cluster, BATTERY_RUNTIME_ATTR_REMAINING_DAYS_ID, EZB_ZCL_ATTR_TYPE_UINT16,
                             ATTR_ACCESS, &rt.days_x10)),
                         TAG, "RemainingDays");
+    uint16_t voltage_mv = power_config_cluster_get_voltage_mv();
+    ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_zcl_custom_cluster_desc_add_attr(
+                            cluster, BATTERY_RUNTIME_ATTR_VOLTAGE_MV_ID, EZB_ZCL_ATTR_TYPE_UINT16,
+                            ATTR_ACCESS, &voltage_mv)),
+                        TAG, "BatteryVoltageMv");
 
     return esp_zigbee_err_to_esp(ezb_af_endpoint_add_cluster_desc(ep_desc, cluster));
 }
@@ -46,4 +52,9 @@ esp_err_t battery_runtime_cluster_update(const battery_runtime_t *runtime)
 {
     ESP_RETURN_ON_ERROR(set_u16(BATTERY_RUNTIME_ATTR_REMAINING_ON_TIME_ID, runtime->on_time_x10h), TAG, "On time");
     return set_u16(BATTERY_RUNTIME_ATTR_REMAINING_DAYS_ID, runtime->days_x10);
+}
+
+esp_err_t battery_runtime_cluster_set_voltage(uint16_t mv)
+{
+    return set_u16(BATTERY_RUNTIME_ATTR_VOLTAGE_MV_ID, mv);
 }

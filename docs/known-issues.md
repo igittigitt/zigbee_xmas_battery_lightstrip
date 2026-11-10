@@ -61,7 +61,7 @@ Stand: 2026-11-07, nach der Umstellung auf esp-zigbee-lib 2.0.5 / ESP-IDF 5.5.4.
    - Ein **teilgeladener** Akku wird nicht erkannt. Zurückgesetzt wird nur, wenn die erste Messung nach dem Start ≥ 4,15 V ergibt. Sonst läuft der Zähler mit dem alten Stand weiter. Ohne gespeicherten Zähler wird ein voller Akku angenommen.
    - Bei Stromausfall gehen bis zu 6 h Zählung verloren (NVS-Intervall). Der angefangene Tag zählt nach einem Neustart nicht für den Tagesmittelwert.
    - Ladestand in % (Spannung, Z7) und Modell können auseinanderlaufen. Das Modell-% steht nur im Log.
-   - Cluster `0xFC00` ohne Herstellercode: Der Z2M-Converter lädt und zeigt die Exposes (2026-11-08). Ob die Werte ankommen und `scale: 10` stimmt, ist ungetestet, siehe [zigbee.md](zigbee.md#z2m-external-converter). Unbekannte Tage (`0xFFFF`) erscheinen in Z2M vermutlich als 6553,5.
+   - Cluster `0xFC00` ohne Herstellercode: Der Z2M-Converter lädt und zeigt die Exposes (2026-11-08). Ob die Werte ankommen und `scale: 10` stimmt, ist ungetestet, siehe [zigbee.md](zigbee.md#z2m-external-converter). Unbekannte Tage (`0xFFFF`) erscheinen in Z2M vermutlich als 6553,5. Neu (2026-11-10): Attribut `0x0002` (Spannung in mV, Expose `voltage`) ist nur gebaut, nicht am Gerät getestet. Ohne Messung (`0xFFFF`) erscheint vermutlich 65535 mV.
    - Bei einer Hardware-Rampe (`fade`) bucht das Modell den Zielpegel ab Rampenbeginn (Fehler höchstens eine Rampendauer, ≤ 1 s).
    - **Beobachtet am 2026-11-09 in HA** (PPK2 3,5 V): „Restlaufzeit Licht an“ 17,5 h, „Restlaufzeit“ ohne Wert, Battery 9 %, Voltage 3,4 V.
      - 17,5 h: Das Modell nimmt einen vollen Akku an (siehe oben). Rechnung: 3000 mAh × 0,88 / 150,5 mA (Platzhalter) ≈ 17,5 h.

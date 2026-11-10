@@ -133,7 +133,7 @@ Direkt nach dem Laden des Converters zeigen die neuen Werte **N/A**. Z2M hat sie
 | State, Brightness, Effect, Power-on behavior | On/Off, Level Control | Licht |
 | Identify | Identify | Lichterkette blinkt kurz |
 | Battery (%) | Power Configuration `0x0001` | Aus der Ruhespannung. Bei eingeschaltetem Licht bleibt der letzte Wert stehen |
-| Voltage (mV) | Power Configuration `0x0001` | Messung alle 15 min, Report höchstens stündlich, spätestens alle 4 h |
+| Voltage (mV) | Herstellercluster `0xFC00` | Messwert in voller Auflösung (das Standardattribut hätte nur 100-mV-Schritte). Messung alle 15 min, Report höchstens stündlich, spätestens alle 4 h oder bei ≥ 10 mV Änderung. Bei eingeschaltetem Licht unter Last gemessen |
 | Restlaufzeit Licht an (h) | Herstellercluster `0xFC00` | Schätzung aus dem Verbrauchsmodell, stündlich aktualisiert |
 | Restlaufzeit (d) | Herstellercluster `0xFC00` | Schätzung bei der Nutzung der letzten 7 Tage. Bis ein voller Tag gezählt ist, unbekannt (Anzeige vermutlich 6553,5) |
 
