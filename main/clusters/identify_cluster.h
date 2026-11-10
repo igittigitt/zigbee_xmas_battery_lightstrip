@@ -23,7 +23,9 @@ void identify_cluster_attribute_changed(const ezb_zcl_attribute_t *attribute);
 /**
  * @brief Handle an Identify TriggerEffect command (Zigbee task).
  *
- * Every effect is shown as the same blinking (no effect-specific patterns).
+ * Light effects are not supported (docs/goals.md): the command is answered
+ * with UNSUP_CMD and the light is left unchanged. Only the Identify command
+ * (IdentifyTime) makes the light chain blink.
  *
  * @param message TriggerEffect message from the stack
  */

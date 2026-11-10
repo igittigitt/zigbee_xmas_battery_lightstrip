@@ -22,7 +22,7 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 | Cluster | ID | Herkunft | Inhalt / Verhalten |
 |---|---|---|---|
 | Basic | `0x0000` | ZHA-Vorlage | ManufacturerName `zigbee-light`, ModelIdentifier `ZL-LightChain` (`ZB_MANUFACTURER_NAME`/`ZB_MODEL_IDENTIFIER`), PowerSource = `0x03` Battery |
-| Identify | `0x0003` | ZHA-Vorlage | Identify/TriggerEffect → Lichterkette blinkt `ZB_IDENTIFY_DURATION_MS` (2 s) mit `ZB_IDENTIFY_BLINK_HZ` (5 Hz), danach vorheriger Zustand (Z11), [identify_cluster.c](../main/clusters/identify_cluster.c) |
+| Identify | `0x0003` | ZHA-Vorlage | Identify → Lichterkette blinkt `ZB_IDENTIFY_DURATION_MS` (2 s) mit `ZB_IDENTIFY_BLINK_HZ` (5 Hz), danach vorheriger Zustand (Z11), [identify_cluster.c](../main/clusters/identify_cluster.c) |
 | Groups | `0x0004` | ZHA-Vorlage | Verwaltet der Stack |
 | Scenes | `0x0005` | ZHA-Vorlage | Verwaltet der Stack |
 | On/Off | `0x0006` | ZHA-Vorlage + Erweiterung | `OnOff` → Licht-Modul (Rampe, Z3). Zusätzlich `StartUpOnOff` (`0x4003`, Default `ZB_START_UP_ON_OFF_DEFAULT` = aus, Z6, in Z2M `power_on_behavior`). `OnOff` und `StartUpOnOff` sind persistent ([on_off_cluster.c](../main/clusters/on_off_cluster.c)) |
@@ -98,7 +98,7 @@ LEAVE (Reset, z. B. "Remove" in Z2M) ──► Pairing-Fenster
 | Callback-ID | Behandlung |
 |---|---|
 | `EZB_ZCL_CORE_SET_ATTR_VALUE_CB_ID` | Prüft Status, Endpoint und Server-Rolle; On/Off → `on_off_cluster_attribute_changed()`, Identify → `identify_cluster_attribute_changed()`, andere Cluster nur Debug-Log |
-| `EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID` | `identify_cluster_trigger_effect()` → Blinken |
+| `EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID` | `identify_cluster_trigger_effect()` → abgelehnt mit `UNSUP_CMD` (0x81), Licht unverändert. Lichteffekte sind out of scope ([goals.md](goals.md)) |
 | `EZB_ZCL_CORE_DEFAULT_RSP_CB_ID` | Debug-Log |
 | sonstige | Info-Log `ZCL action 0x....` (vorübergehend, für die Hardware-Tests) |
 
@@ -126,7 +126,7 @@ Für diese Kennung gibt es keinen offiziellen Z2M-Converter. Ohne eigenen Conver
 
 ### Z2M External Converter
 
-Der Converter liegt im Repo unter [z2m/zl-lightchain.mjs](../z2m/zl-lightchain.mjs). Er stellt bereit: Licht (An/Aus, Helligkeit, Einschaltverhalten), Identify, Akku-% (Standardcluster), `voltage` in mV aus `0xFC00`/`0x0002` sowie die Sensoren `remaining_light_hours` (h) und `remaining_days` (d). In HA erscheinen sie als Entitäten beim Gerät.
+Der Converter liegt im Repo unter [z2m/zl-lightchain.mjs](../z2m/zl-lightchain.mjs). Er stellt bereit: Licht (An/Aus, Helligkeit, Einschaltverhalten; ohne „Effect“, `light({effect: false})`), Identify, Akku-% (Standardcluster), `voltage` in mV aus `0xFC00`/`0x0002` sowie die Sensoren `remaining_light_hours` (h) und `remaining_days` (d). In HA erscheinen sie als Entitäten beim Gerät.
 
 Installation laut [Z2M-Doku „External converters“](https://www.zigbee2mqtt.io/advanced/more/external_converters.html):
 1. Die Datei in den Ordner `external_converters` legen. Er liegt neben der `configuration.yaml` von Z2M.

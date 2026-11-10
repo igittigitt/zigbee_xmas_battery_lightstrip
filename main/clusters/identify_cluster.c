@@ -45,8 +45,8 @@ void identify_cluster_attribute_changed(const ezb_zcl_attribute_t *attribute)
 
 void identify_cluster_trigger_effect(ezb_zcl_identify_effect_message_t *message)
 {
-    ESP_LOGI(TAG, "TriggerEffect 0x%02x (variant 0x%02x): blinking", message->in.effect_id,
+    // Effects are out of scope (docs/goals.md): reject, do not touch the light
+    ESP_LOGI(TAG, "TriggerEffect 0x%02x (variant 0x%02x) not supported", message->in.effect_id,
              message->in.effect_variant);
-    identify_blink();
-    message->out.result = EZB_ZCL_STATUS_SUCCESS;
+    message->out.result = EZB_ZCL_STATUS_UNSUP_CMD;
 }

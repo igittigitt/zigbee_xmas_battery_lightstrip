@@ -38,7 +38,7 @@
 
 /**
  * Identify (goal Z11): blink the light chain at this rate for this duration
- * when an Identify or TriggerEffect command arrives. The IdentifyTime
+ * when an Identify command arrives (TriggerEffect is rejected). The IdentifyTime
  * requested by the coordinator is not used, the duration is fixed.
  */
 #define ZB_IDENTIFY_BLINK_HZ            5

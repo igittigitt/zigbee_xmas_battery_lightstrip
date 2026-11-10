@@ -33,7 +33,9 @@ export default {
             commands: {},
             commandsResponse: {},
         }),
-        light({powerOnBehavior: true, configureReporting: true}),
+        // effect: false - light() adds the "effect" expose by default (genIdentify triggerEffect);
+        // the firmware rejects TriggerEffect, effects are out of scope (docs/goals.md)
+        light({effect: false, powerOnBehavior: true, configureReporting: true}),
         identify({isSleepy: true}),
         // Battery %: reporting at least every 4 hours, at most hourly (the device measures every
         // 15 min), smallest ZCL step 1 % (change 2, unit 0.5 %).
