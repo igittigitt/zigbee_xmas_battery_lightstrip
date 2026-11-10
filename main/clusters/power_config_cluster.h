@@ -30,8 +30,10 @@ esp_err_t power_config_cluster_add(ezb_af_ep_desc_t ep_desc);
 /**
  * @brief Measure the battery now and update the attributes (goal Z7).
  *
- * BatteryVoltage is always updated; BatteryPercentageRemaining only from a
- * measurement at rest (light off) and smoothed (BATTERY_PERCENT_RISE_MIN).
+ * BatteryVoltage is always updated; BatteryPercentageRemaining from a
+ * measurement at rest (light off, BATTERY_OCV_TABLE) or with the light on at
+ * full brightness (BATTERY_LOAD_TABLE), smoothed (BATTERY_PERCENT_RISE_MIN).
+ * Dimmed or during a ramp the state of charge is kept.
  * Whether a report is sent depends on the reporting configuration set up by
  * the coordinator.
  *
@@ -41,6 +43,19 @@ esp_err_t power_config_cluster_add(ezb_af_ep_desc_t ep_desc);
  * @return ESP_OK, or the error of the measurement (attributes unchanged)
  */
 esp_err_t power_config_cluster_update(void);
+
+/**
+ * @brief Measure the battery now and update the attributes, in the Zigbee task.
+ *
+ * Same as power_config_cluster_update(), but without taking the Zigbee lock:
+ * for the Zigbee task and its callbacks (read requests, read_request_handler.c).
+ * Blocks for the measurement (a few ms).
+ *
+ * @return ESP_OK, ESP_ERR_INVALID_STATE without battery measurement (DEBUG
+ *         without ADC, or ADC init failed), or the error of the measurement
+ *         (attributes unchanged)
+ */
+esp_err_t power_config_cluster_refresh(void);
 
 /**
  * @brief Last measured battery voltage in mV (exact, not in 100 mV steps).

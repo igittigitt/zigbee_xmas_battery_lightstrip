@@ -51,4 +51,13 @@ esp_err_t battery_runtime_cluster_update(const battery_runtime_t *runtime);
  */
 esp_err_t battery_runtime_cluster_set_voltage(uint16_t mv);
 
+/**
+ * @brief Compute the remaining time now (battery_model_get()) and write it.
+ *
+ * Must be called in the Zigbee task or with the Zigbee lock held.
+ *
+ * @return ESP_OK on success
+ */
+esp_err_t battery_runtime_cluster_refresh(void);
+
 #endif // BATTERY_RUNTIME_CLUSTER_H

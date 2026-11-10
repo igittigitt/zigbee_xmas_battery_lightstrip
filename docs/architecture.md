@@ -34,7 +34,8 @@ zigbee-light/
     │   ├── battery_model.[ch]        # Verbrauchsmodell → Restlaufzeit (Z14), Zähler im NVS
     │   └── battery_config.h          # GPIO, Teiler, Kalibrierfaktor, Intervall, OCV-Tabelle, Modellströme
     ├── handlers/
-    │   └── attribute_handler.[ch]     # Routing eingehender ZCL-Aktionen
+    │   ├── attribute_handler.[ch]     # Routing eingehender ZCL-Aktionen
+    │   └── read_request_handler.[ch]  # Read-Requests loggen, Akkuwerte vorher neu messen/rechnen
     └── light/
         ├── light.[ch]                # Lichtsteuerung: Task, Rampen (Z3), öffentliche API
         ├── light_config.h            # Pins, Rampendauer, Timings, PWM-Parameter
@@ -83,6 +84,7 @@ power_management.c: esp_pm_configure() – Schlaf steuert ESP-IDF, nicht die Anw
    2. Kanalmasken, Signal-Handler, `rx_on_when_idle = false`;
    3. `cluster_manager_register_device()`: Endpoint 1 anlegen und registrieren;
    4. `ezb_zcl_core_action_handler_register(attribute_handler_callback)`;
+   4a. `read_request_handler_init()`: APS-Indication-Callback für Read-Requests (siehe [zigbee.md](zigbee.md));
    5. `esp_zigbee_start(false)`, danach `esp_zigbee_launch_mainloop()` (kehrt nicht zurück).
 5. Der Stack meldet `SKIP_STARTUP`. Daraufhin folgen BDB-Initialisierung und Pairing bzw. Rejoin, siehe [zigbee.md](zigbee.md#commissioning).
 

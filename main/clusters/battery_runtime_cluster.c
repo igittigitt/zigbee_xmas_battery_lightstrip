@@ -54,6 +54,15 @@ esp_err_t battery_runtime_cluster_update(const battery_runtime_t *runtime)
     return set_u16(BATTERY_RUNTIME_ATTR_REMAINING_DAYS_ID, runtime->days_x10);
 }
 
+esp_err_t battery_runtime_cluster_refresh(void)
+{
+    battery_runtime_t rt;
+    battery_model_get(&rt);
+    ESP_LOGI(TAG, "Recomputed: light-on %u.%u h, days %u.%u (6553.5 = unknown)",
+             rt.on_time_x10h / 10, rt.on_time_x10h % 10, rt.days_x10 / 10, rt.days_x10 % 10);
+    return battery_runtime_cluster_update(&rt);
+}
+
 esp_err_t battery_runtime_cluster_set_voltage(uint16_t mv)
 {
     return set_u16(BATTERY_RUNTIME_ATTR_VOLTAGE_MV_ID, mv);

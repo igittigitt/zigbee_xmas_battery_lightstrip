@@ -77,12 +77,44 @@ static void enter_emergency_sleep(void)
     esp_deep_sleep_start();
 }
 
-static void shutdown_task(void *arg)
+/*
+ * "Battery empty" signal, blocking (a few seconds): BATTERY_EMPTY_FLASH_COUNT
+ * short flashes, then a last flash that fades out with the soft ramp, so the
+ * chain does not simply look dead in the emergency sleep. Ends with the light
+ * off. Called from app_main (boot check) or the shutdown task.
+ */
+static void empty_signal(void)
 {
-    // Soft ramp down first (goal Z3, no current spike), then force the pins low
+    const uint8_t level = (uint8_t)(LIGHT_LEVEL_MAX * BATTERY_EMPTY_LEVEL_PERCENT / 100);
+
+    if (light_get_level() != 0) {
+        // Light on: soft ramp down first (goal Z3, no current spike)
+        light_fade_to(0, LIGHT_RAMP_MS);
+        vTaskDelay(pdMS_TO_TICKS(BATTERY_SHUTDOWN_LIGHT_WAIT_MS));
+    }
+    for (int i = 0; i < BATTERY_EMPTY_FLASH_COUNT; i++) {
+        light_fade_to(level, LIGHT_BLINK_RAMP_MS);
+        vTaskDelay(pdMS_TO_TICKS(BATTERY_WARN_FLASH_MS));
+        light_fade_to(0, LIGHT_BLINK_RAMP_MS);
+        vTaskDelay(pdMS_TO_TICKS(BATTERY_WARN_PAUSE_MS));
+    }
+    light_fade_to(level, LIGHT_BLINK_RAMP_MS);
+    vTaskDelay(pdMS_TO_TICKS(BATTERY_WARN_FLASH_MS));
     light_fade_to(0, LIGHT_RAMP_MS);
     vTaskDelay(pdMS_TO_TICKS(BATTERY_SHUTDOWN_LIGHT_WAIT_MS));
-    enter_emergency_sleep();
+}
+
+static void shutdown_task(void *arg)
+{
+    empty_signal();
+    enter_emergency_sleep();    // forces the pins low in any case
+}
+
+/* Woken by the timer only (not by the button): no signal, nobody is looking. */
+static bool woken_by_timer_only(void)
+{
+    const uint32_t causes = esp_sleep_get_wakeup_causes();
+    return (causes & (1UL << ESP_SLEEP_WAKEUP_TIMER)) && !(causes & (1UL << ESP_SLEEP_WAKEUP_EXT1));
 }
 
 /* Warning: 3 short flashes if off, 3 short dark gaps if on; the light returns to its state. */
@@ -117,6 +149,9 @@ esp_err_t battery_guard_boot_check(void)
     const uint32_t limit = after_emergency ? BATTERY_RESUME_MV : BATTERY_SHUTDOWN_MV;
     if (mv < limit) {
         ESP_LOGW(TAG, "Battery %" PRIu32 " mV < %" PRIu32 " mV", mv, limit);
+        if (!woken_by_timer_only()) {
+            empty_signal();     // button wakeup or reset: show "battery empty"
+        }
         enter_emergency_sleep();
     }
     if (after_emergency) {

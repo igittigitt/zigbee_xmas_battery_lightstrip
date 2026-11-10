@@ -22,6 +22,7 @@
 #include "on_off_cluster.h"
 #include "level_cluster.h"
 #include "attribute_handler.h"
+#include "read_request_handler.h"
 #include "status_indicator.h"
 #include "debug_marker.h"
 #include "app_config.h"
@@ -404,6 +405,7 @@ static esp_err_t zigbee_setup(void)
     // Data model: endpoint with clusters, then ZCL action callbacks
     ESP_RETURN_ON_ERROR(cluster_manager_register_device(), TAG, "device registration");
     ezb_zcl_core_action_handler_register(attribute_handler_callback);
+    ESP_RETURN_ON_ERROR(read_request_handler_init(), TAG, "read request handler");
 
     return ESP_OK;
 }

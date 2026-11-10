@@ -17,6 +17,8 @@ typedef struct {
 
 static const battery_ocv_point_t s_ocv_table[] = BATTERY_OCV_TABLE;
 #define OCV_TABLE_LEN   (sizeof(s_ocv_table) / sizeof(s_ocv_table[0]))
+static const battery_ocv_point_t s_load_table[] = BATTERY_LOAD_TABLE;
+#define LOAD_TABLE_LEN  (sizeof(s_load_table) / sizeof(s_load_table[0]))
 
 static adc_unit_t s_unit;
 static adc_channel_t s_channel;
@@ -105,17 +107,28 @@ esp_err_t battery_measure_mv(uint32_t *mv)
     return ESP_OK;
 }
 
-uint8_t battery_percent_from_mv(uint32_t mv)
+/* Piecewise linear interpolation in a table ascending by mV, clamped to its ends. */
+static uint8_t percent_from_table(const battery_ocv_point_t *table, size_t len, uint32_t mv)
 {
-    if (mv <= s_ocv_table[0].mv) {
-        return s_ocv_table[0].percent;
+    if (mv <= table[0].mv) {
+        return table[0].percent;
     }
-    for (size_t i = 1; i < OCV_TABLE_LEN; i++) {
-        const battery_ocv_point_t *lo = &s_ocv_table[i - 1];
-        const battery_ocv_point_t *hi = &s_ocv_table[i];
+    for (size_t i = 1; i < len; i++) {
+        const battery_ocv_point_t *lo = &table[i - 1];
+        const battery_ocv_point_t *hi = &table[i];
         if (mv <= hi->mv) {
             return (uint8_t)(lo->percent + (mv - lo->mv) * (uint32_t)(hi->percent - lo->percent) / (hi->mv - lo->mv));
         }
     }
-    return s_ocv_table[OCV_TABLE_LEN - 1].percent;
+    return table[len - 1].percent;
+}
+
+uint8_t battery_percent_from_mv(uint32_t mv)
+{
+    return percent_from_table(s_ocv_table, OCV_TABLE_LEN, mv);
+}
+
+uint8_t battery_percent_from_mv_load(uint32_t mv)
+{
+    return percent_from_table(s_load_table, LOAD_TABLE_LEN, mv);
 }

@@ -142,6 +142,12 @@ Begründung: Der ESP32-H2 läuft ab 3,0 V, und unterhalb ~3,3 V Akkuspannung gre
   - Beispiel-OCV-Tabelle von TI ([SLUAAR3](https://www.ti.com/lit/SLUAAR3), Fig. 2-1, generische Zelle): 3,38 V ≙ 20 %, 3,20 V ≙ 10 % → 3,3 V Ruhespannung ≈ 15 % Ladestand.
   - Ich glaube es könnte so sein: Für unsere konkrete Zelle liegt der Wert irgendwo zwischen diesen Angaben; er hängt von Zellchemie, Temperatur und Alterung ab. **Klärung per Messung** (Entladung der eigenen Zelle) sinnvoll, bevor die Schwelle Z8 festgelegt wird.
 - Entladeschlussspannung laut Datenblättern: Samsung INR18650-35E 2,65 V; Samsung 30Q, LG MJ1, Panasonic NCR18650B 2,5 V. 3,0 V nennt keines davon – das ist eine konservative eigene Wahl.
+- **Verwendete Zelle: Samsung INR18650-35E**. Quelle: [datasheets/INR18650-35E.pdf](../datasheets/INR18650-35E.pdf), Samsung SDI, Ver. 1.1, 2015-07-09.
+  - **Kapazität:** mindestens 3.350 mAh bei 0,2 C = 680 mA bis 2,65 V, 23 °C (Abschnitte 3.1 und 7.2). Bei 1 C sind es 3.250 mAh (Abschnitt 7.3).
+  - **Spannungen:** Ladespannung 4,2 V, Nennspannung 3,60 V, Entladeschluss 2,65 V (Abschnitte 3.2, 3.3 und 3.9).
+  - **Innenwiderstand:** 35 mΩ, gemessen mit AC 1 kHz nach dem Laden (Abschnitt 7.4). Der Gleichstrom-Innenwiderstand unter Dauerlast ist nicht angegeben.
+  - **Auslieferung:** mit 30 % Ladung (Abschnitt 3.13, Note 1), in einem Spannungsbereich von 3,49–3,69 V (Abschnitt 7.11).
+  - **Keine Entladekurve im Datenblatt.** Die Tabellen `BATTERY_OCV_TABLE` und `BATTERY_LOAD_TABLE` müssen deshalb aus einer eigenen Messung kommen.
 - Ob ein Buck-Boost die Restkapazität sinnvoll nutzbar machen würde, hängt von dieser Restkapazität und dem Ruhestrom des Wandlers ab – [OFFEN]. Abschaltschwelle Z8 vorläufig ca. 3,2–3,3 V Ruhespannung (Hysterese, Messung bei LED aus), Festlegung nach Klärung.
 - ⚠️ **5V-Pin = VBUS** (direkt verbunden, siehe Schaltplan). Bei gestecktem USB und angeschlossenem Akku speist USB mit 5 V in den Akku zurück. Vor dem Flashen Akku abklemmen oder eine Schottky-/Ideal-Diode in die Akkuleitung setzen (kostet ~0,2–0,3 V Reserve).
 - **Versorgungspfad niederohmig verdrahten:** Der ESP32-H2 zieht beim Funk-Start kurze Spitzen von ≈ 100–180 mA (PPK2-Messung S10, [power-measurement.md](power-measurement.md#ablauf-s10-reboot-schleife)). Über ein billiges Steckbrett führte das unterhalb von 4,0 V zu einer Reboot-Schleife. Akku und 5V-Pin deshalb kurz und gelötet verbinden.
@@ -223,7 +229,7 @@ Akku+ ──[ 1 MΩ 1% ]──┬──[ 1 MΩ 1% ]── GND
 | Strommess-Chip (INA219/226) | Coulomb-Zählung braucht Kalibrierung und Bezug „voll“. Ruhestrom laut TI: INA219 0,7 mA typ. / 1 mA max. (Power-down 6 µA typ.), SBOS448G; INA226 330 µA typ. / 420 µA max. (Power-down 0,5 µA typ.), SBOS547C |
 | Z-Diode | Ich glaube es könnte so sein: nur als Schwellwertgeber brauchbar, Toleranz und Temperaturgang zu groß für eine Messung – nicht belegt |
 
-**Software-Regeln:** Messen bei LED aus (bzw. einige Sekunden nach Ausschalten), Mittelung über mehrere Samples, OCV-Lookup-Tabelle für %, Unterspannungsentscheidung erst nach mehreren Messungen in Folge, mit Hysterese. Messintervall 10–30 min, gebündelt mit ohnehin nötigen Wakeups, zusätzlich bei jedem LED-Schaltvorgang. Umgesetzt sind Mittelung, Messung nur in Ruhe für den Ladestand und 15 min Intervall; die Messung bei jedem Schaltvorgang sowie Mehrfachmessung/Hysterese für Z8 fehlen noch.
+**Software-Regeln:** Messen bei LED aus (bzw. einige Sekunden nach Ausschalten), Mittelung über mehrere Samples, OCV-Lookup-Tabelle für %, Unterspannungsentscheidung erst nach mehreren Messungen in Folge, mit Hysterese. Messintervall 10–30 min, gebündelt mit ohnehin nötigen Wakeups, zusätzlich bei jedem LED-Schaltvorgang. Umgesetzt sind Mittelung, Ladestand aus eigener Tabelle je Zustand (Ruhe bzw. Licht voll an, seit 2026-11-10) und 15 min Intervall; die Messung bei jedem Schaltvorgang sowie Mehrfachmessung/Hysterese für Z8 fehlen noch.
 
 ### Firmware-Umsetzung (Z7)
 
@@ -234,7 +240,8 @@ beim Start (LED noch aus) und alle BATTERY_MEASURE_INTERVAL_MS = 15 min:
   ADC-Unit anlegen → 16 Samples, eFuse-kalibriert (Curve Fitting) → Mittelwert → Unit löschen
   × Teilerverhältnis (R_TOP + R_BOTTOM) / R_BOTTOM × BATTERY_CAL_PERMILLE / 1000  → Akkuspannung mV
   LED aus → Ladestand aus BATTERY_OCV_TABLE, geglättet (nur fallend, Anstieg erst ab +5 %)
-  LED an  → nur Spannung, Ladestand bleibt (Spannung unter Last ist zu niedrig)
+  LED voll an → Ladestand aus BATTERY_LOAD_TABLE (Spannung unter Last), gleiche Glättung
+  LED gedimmt / Rampe → nur Spannung, Ladestand bleibt
   → BatteryVoltage (100 mV) und BatteryPercentageRemaining (0,5 %)
 ```
 

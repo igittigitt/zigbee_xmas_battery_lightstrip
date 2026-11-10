@@ -44,4 +44,15 @@ esp_err_t battery_measure_mv(uint32_t *mv);
  */
 uint8_t battery_percent_from_mv(uint32_t mv);
 
+/**
+ * @brief Estimate the state of charge from a voltage measured under load.
+ *
+ * Like battery_percent_from_mv(), but with BATTERY_LOAD_TABLE, which applies
+ * to the light on at full brightness (LIGHT_LEVEL_MAX).
+ *
+ * @param mv Battery voltage in mV, measured with the light on at full brightness
+ * @return State of charge in percent, 0..100
+ */
+uint8_t battery_percent_from_mv_load(uint32_t mv);
+
 #endif // BATTERY_H

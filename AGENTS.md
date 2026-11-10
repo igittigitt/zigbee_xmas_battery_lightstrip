@@ -39,12 +39,13 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/zigbee_device.c` | Stack-Init, Commissioning (Pairing-Fenster, Rejoin-Backoff), Signal-Handler; API `zigbee_device_start_pairing/_factory_reset/_is_joined` |
 | `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „Dimmable Light“ + Zusatzcluster und registriert ihn |
 | `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `level` ↔ Helligkeit, `identify`, `power_config` Akku) |
-| `main/battery/battery_guard.c` | Tiefentladeschutz (Z8): < 3,3 V Warnblinken bei jeder Messung, < 3,0 V Licht aus + Deep Sleep (Wecken Taster/6 h, weiter ab 3,6 V); Startprüfung vor dem Zigbee-Start. Aktiv in Level 0 und 3 (`APP_BATTERY_GUARD`) |
+| `main/battery/battery_guard.c` | Tiefentladeschutz (Z8): < 3,3 V Warnblinken bei jeder Messung, < 3,0 V Signal „Akku leer“ (3 Blitze + Ausklingen) + Deep Sleep (Wecken Taster/6 h, weiter ab 3,6 V; Signal auch bei Tasterweckung, nicht bei Timer); Startprüfung vor dem Zigbee-Start. Aktiv in Level 0 und 3 (`APP_BATTERY_GUARD`) |
 | `main/battery/battery_model.c` | Verbrauchsmodell für die Restlaufzeit (Z14): Zählung bei jeder Pegeländerung (`battery_model_set_load` aus `light.c`), stündlicher Timer, Zähler im NVS. Ströme in `battery_config.h` sind Platzhalter |
 | `main/clusters/battery_runtime_cluster.c` | Herstellerspezifischer Cluster `0xFC00` (RemainingOnTime, RemainingDays) |
 | `z2m/zl-lightchain.mjs` | Zigbee2MQTT External Converter (nötig, damit die Restlaufzeit in HA erscheint) |
 | `main/battery/battery.c` | Akkuspannung per ADC (Unit nur während der Messung, wegen Sleep-Power-Domänen), Ruhespannung → %; Konstanten in `battery_config.h` |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |
+| `main/handlers/read_request_handler.c` | Hakt sich per `ezb_apsde_data_indication_handler_register` vor die Stack-Verarbeitung: loggt jedes Read Attributes an den Endpoint; bei Akkuwerten neu messen (`power_config_cluster_refresh`), bei Restlaufzeit neu rechnen (`battery_runtime_cluster_refresh`), dann antwortet der Stack |
 | `main/button.c` | BOOT-Taster GPIO 9 (Z5): kurz = Toggle (nur verbunden), ≥ 5 s = Factory Reset + Pairing; immer aktiv, weckt per EXT1 aus Light Sleep (auch bei abgeschalteter Peripherie-Domäne) |
 | `main/debug_marker.c` | Nur DEBUG Level 3 (`APP_DEBUG_MARKERS`): PPK2-Marker auf GPIO 2–5 (D0 wach/Sleep per `esp_pm`-Sleep-Callbacks, D1 Zigbee, D2 Licht, D3 Akkumessung), Log stumm; sonst leere Inline-Stubs |
 | `main/radio_trace.c` | Nur DEBUG (`ZL_DEBUG_RADIO_TRACE`): Beacons/Join-Frames mit LQI/RSSI loggen, per Linker-`--wrap` der 802.15.4-Treiber-Callbacks (`main/CMakeLists.txt`) |

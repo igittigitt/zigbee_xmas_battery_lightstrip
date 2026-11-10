@@ -37,16 +37,11 @@ export default {
         // the firmware rejects TriggerEffect, effects are out of scope (docs/goals.md)
         light({effect: false, powerOnBehavior: true, configureReporting: true}),
         identify({isSleepy: true}),
-        // Battery %: reporting at least every 4 hours, at most hourly (the device measures every
-        // 15 min), smallest ZCL step 1 % (change 2, unit 0.5 %).
-        // Voltage: the standard genPowerCfg.batteryVoltage has only 100 mV steps, so battery()
-        // does not expose it (voltage: false publishes no `voltage` key, modernExtend.ts). The
-        // exact value comes from the own attribute 0xFC00/0x0002 below.
-        battery({
-            voltage: false,
-            voltageReporting: false,
-            percentageReportingConfig: {min: '1_HOUR', max: '4_HOURS', change: 2},
-        }),
+        // Voltage in mV from 0xFC00/0x0002. MUST stand before battery(): Z2M picks the FIRST
+        // toZigbee converter whose key matches (publish.ts, `converters.find`), extends are
+        // appended in array order (index.ts processExtensions). battery()'s converter has the key
+        // ["battery", "voltage"] and would otherwise answer a "voltage" refresh by reading
+        // genPowerCfg.batteryVoltage, whose value is not published (voltage: false).
         numeric({
             name: 'voltage',
             label: 'Voltage',
@@ -59,6 +54,16 @@ export default {
             // change 10 = 10 mV; same timing as battery %
             reporting: {min: '1_HOUR', max: '4_HOURS', change: 10},
             entityCategory: 'diagnostic',
+        }),
+        // Battery %: reporting at least every 4 hours, at most hourly (the device measures every
+        // 15 min), smallest ZCL step 1 % (change 2, unit 0.5 %).
+        // Voltage: the standard genPowerCfg.batteryVoltage has only 100 mV steps, so battery()
+        // does not expose it (voltage: false publishes no `voltage` key, modernExtend.ts). The
+        // exact value comes from the own attribute 0xFC00/0x0002 above.
+        battery({
+            voltage: false,
+            voltageReporting: false,
+            percentageReportingConfig: {min: '1_HOUR', max: '4_HOURS', change: 2},
         }),
         numeric({
             name: 'remaining_light_hours',

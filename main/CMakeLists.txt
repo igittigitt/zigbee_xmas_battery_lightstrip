@@ -12,6 +12,7 @@ idf_component_register(
         "clusters/power_config_cluster.c"
         "clusters/battery_runtime_cluster.c"
         "handlers/attribute_handler.c"
+        "handlers/read_request_handler.c"
         "battery/battery.c"
         "light/light.c"
         "light/light_driver_ws2812.c"

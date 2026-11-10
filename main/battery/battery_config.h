@@ -70,9 +70,10 @@
 /**
  * Open circuit voltage -> state of charge, piecewise linear, ascending by mV.
  *
- * [UNBELEGT] Placeholder: linear between the planned cut-off threshold
- * (3300 mV, goal Z8, docs/hardware.md "Abschaltschwelle ca. 3,2-3,3 V") and
- * a full Li-ion cell (4200 mV, end-of-charge voltage of the charger). The real
+ * [UNBELEGT] Placeholder: linear between the emergency shutdown threshold
+ * (BATTERY_SHUTDOWN_MV = 3000 mV, goal Z8: 0 % = the light goes off; agreed
+ * with the user on 2026-11-10) and a full Li-ion cell (4200 mV, end-of-charge
+ * voltage of the charger). The real
  * curve of a Li-ion cell is flat in the middle (docs/hardware.md, TI SLUAAR3
  * Fig. 2-1), so this table over- or underestimates in the middle range.
  * Replace with points from the discharge curve of the cell actually used
@@ -80,7 +81,26 @@
  */
 #define BATTERY_OCV_TABLE                                   \
     {                                                       \
-        { .mv = 3300, .percent = 0 },                       \
+        { .mv = 3000, .percent = 0 },                       \
+        { .mv = 4200, .percent = 100 },                     \
+    }
+
+/**
+ * Battery voltage under load (light on at full brightness, LIGHT_LEVEL_MAX)
+ * -> state of charge, piecewise linear, ascending by mV. Used so the state of
+ * charge keeps falling while the light is on (a cell that drops quickly during
+ * a long on-phase would otherwise keep its last value from the rest phase).
+ *
+ * [UNBELEGT] Placeholder: same points as BATTERY_OCV_TABLE. The voltage under
+ * load is lower than at rest, so this placeholder reads too low (pessimistic,
+ * the safe direction). Replace with the own discharge measurement (full cell,
+ * light permanently on at 100 %, log every measurement until the shutdown).
+ * The Samsung INR18650-35E datasheet (datasheets/INR18650-35E.pdf, Ver. 1.1)
+ * contains no discharge curve.
+ */
+#define BATTERY_LOAD_TABLE                                  \
+    {                                                       \
+        { .mv = 3000, .percent = 0 },                       \
         { .mv = 4200, .percent = 100 },                     \
     }
 
@@ -128,6 +148,16 @@
  */
 #define BATTERY_SHUTDOWN_LIGHT_WAIT_MS  3000
 
+/**
+ * "Battery empty" signal before the emergency deep sleep and after a button
+ * wakeup that stays in it (not after a timer wakeup): BATTERY_EMPTY_FLASH_COUNT
+ * short flashes at this brightness (BATTERY_WARN_FLASH_MS / BATTERY_WARN_PAUSE_MS),
+ * then one more flash that fades out with LIGHT_RAMP_MS. Own choice, agreed
+ * with the user on 2026-11-10.
+ */
+#define BATTERY_EMPTY_FLASH_COUNT       3
+#define BATTERY_EMPTY_LEVEL_PERCENT     30
+
 /* ---- Consumption model, remaining time (goal Z14), battery_model.c ----
  *
  * All current and capacity values are PLACEHOLDERS [UNBELEGT] until they are
@@ -135,8 +165,12 @@
  * these values.
  */
 
-/** Nominal capacity in mAh. [UNBELEGT] placeholder, cells of 3000-5000 mAh are planned (docs/hardware.md). */
-#define BATTERY_CAPACITY_MAH            3000
+/**
+ * Capacity in mAh. Cell used: Samsung INR18650-35E, "Standard Discharge
+ * Capacity 3,350mAh" (minimum; 0.2C = 680 mA to 2.65 V at 23 °C, datasheet
+ * datasheets/INR18650-35E.pdf Ver. 1.1, 3.1 / 7.2).
+ */
+#define BATTERY_CAPACITY_MAH            3350
 
 /**
  * Usable share of the capacity until the cut-off threshold (goal Z8), in per
