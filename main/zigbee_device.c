@@ -21,6 +21,7 @@
 #include "cluster_manager.h"
 #include "on_off_cluster.h"
 #include "level_cluster.h"
+#include "ota_cluster.h"
 #include "attribute_handler.h"
 #include "read_request_handler.h"
 #include "status_indicator.h"
@@ -264,6 +265,8 @@ static void on_network_joined(const char *how)
     rejoin_reset();
     cancel_scheduled_commissioning();
     log_parent();
+    // Back in the network: a firmware just installed by OTA is good, cancel the rollback (goal Z16)
+    ota_cluster_confirm_image();
     on_off_cluster_sync_attribute();
     level_cluster_sync_attribute();
     // Confirmation pattern, then the StartUpOnOff state (goals Z10/Z12); no

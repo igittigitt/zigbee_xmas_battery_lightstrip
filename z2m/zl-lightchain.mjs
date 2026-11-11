@@ -5,8 +5,9 @@
 // modernExtend functions per zigbee-herdsman-converters src/lib/modernExtend.ts (master).
 //
 // Exposes: light (on/off, brightness, power-on behaviour), identify, battery
-// (% and voltage, goal Z7) and the remaining time of the consumption model
-// (goal Z14) from the manufacturer-specific cluster 0xFC00.
+// (% and voltage, goal Z7), the remaining time of the consumption model
+// (goal Z14) from the manufacturer-specific cluster 0xFC00 and firmware updates
+// over Zigbee (OTA, goal Z16; image via ota.zigbee_ota_override_index_location, docs/zigbee.md).
 
 import {battery, deviceAddCustomCluster, enumLookup, identify, light, numeric} from 'zigbee-herdsman-converters/lib/modernExtend';
 
@@ -24,6 +25,9 @@ export default {
     model: 'ZL-LightChain',
     vendor: 'zigbee-light',
     description: 'Battery powered LED light chain (ESP32-H2, sleepy end device)',
+    // OTA (goal Z16): plain definition field (Definition.ota, zigbee-herdsman-converters src/lib/types.ts);
+    // Z2M then offers updates and HA gets an "update" entity. The device has the genOta client cluster.
+    ota: true,
     extend: [
         deviceAddCustomCluster(RUNTIME_CLUSTER, {
             name: RUNTIME_CLUSTER,

@@ -9,6 +9,7 @@
 #include "battery_runtime_cluster.h"
 #include "on_off_cluster.h"
 #include "level_cluster.h"
+#include "ota_cluster.h"
 
 static const char *TAG = "CLUSTER_MANAGER";
 
@@ -57,10 +58,12 @@ esp_err_t cluster_manager_register_device(void)
     ESP_RETURN_ON_ERROR(level_cluster_add(ep_desc), TAG, "Level Control extension");
     ESP_RETURN_ON_ERROR(power_config_cluster_add(ep_desc), TAG, "Power Configuration");
     ESP_RETURN_ON_ERROR(battery_runtime_cluster_add(ep_desc), TAG, "Battery runtime");
+    ESP_RETURN_ON_ERROR(ota_cluster_add(ep_desc), TAG, "OTA Upgrade client");
 
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_af_device_add_endpoint_desc(dev_desc, ep_desc)),
                         TAG, "Add endpoint");
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_af_device_desc_register(dev_desc)), TAG, "Register device");
+    ESP_RETURN_ON_ERROR(ota_cluster_init(), TAG, "OTA client configuration");
 
     ESP_LOGI(TAG, "Endpoint %d registered: Dimmable Light, %s / %s", ZB_ENDPOINT,
              ZB_MANUFACTURER_NAME, ZB_MODEL_IDENTIFIER);

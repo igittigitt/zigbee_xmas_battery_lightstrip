@@ -12,9 +12,14 @@ CONFIG_ZB_RADIO_NATIVE=y
 # (boot log "Detected size(4096k)"); default would be 2 MB
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
-# Partition table (Zigbee data is stored in the "nvs" partition)
+# Partition table (Zigbee data is stored in the "nvs" partition; two OTA slots, goal Z16)
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# OTA rollback (goal Z16): a new image boots as PENDING_VERIFY and must confirm itself with
+# esp_ota_mark_app_valid_cancel_rollback() (done after the network join, zigbee_device.c),
+# "otherwise the application will be rolled back upon reboot" (ESP-IDF v5.5 system/ota.html)
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # Automatic light sleep (Sleepy End Device, goal Z1)
 CONFIG_PM_ENABLE=y

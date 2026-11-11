@@ -8,7 +8,7 @@ Stand: esp-zigbee-lib 2.0.5 / ESP-IDF 5.5.4 (siehe [zigbee-framework.md](zigbee-
 zigbee-light/
 ├── CMakeLists.txt              # Projekt "zigbee_node"
 ├── sdkconfig.defaults          # Versionierte Kconfig-Defaults (ZED, Light Sleep, Partitionen)
-├── partitions.csv              # nvs (inkl. Zigbee-Daten), phy_init, factory, zb_fct
+├── partitions.csv              # nvs (inkl. Zigbee-Daten), otadata, phy_init, ota_0, ota_1, zb_fct
 ├── dependencies.lock           # Gelockte Komponenten-Versionen
 ├── docs/                       # Diese Dokumentation
 ├── z2m/
@@ -28,7 +28,8 @@ zigbee-light/
     │   ├── on_off_cluster.[ch]        # On/Off ↔ Licht-Modul, StartUpOnOff (Z6)
     │   ├── identify_cluster.[ch]      # Identify → Blinken (Z11)
     │   ├── power_config_cluster.[ch]  # Power Configuration (Akku, Z7)
-    │   └── battery_runtime_cluster.[ch] # Herstellerspez. Cluster 0xFC00: Restlaufzeit (Z14)
+    │   ├── battery_runtime_cluster.[ch] # Herstellerspez. Cluster 0xFC00: Restlaufzeit (Z14)
+    │   └── ota_cluster.[ch]           # OTA-Upgrade-Client 0x0019 (Z16), esp_ota + Rollback
     ├── battery/
     │   ├── battery.[ch]              # Akkuspannung per ADC (Z7), Ruhespannung → %
     │   ├── battery_model.[ch]        # Verbrauchsmodell → Restlaufzeit (Z14), Zähler im NVS

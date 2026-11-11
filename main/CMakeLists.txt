@@ -11,6 +11,7 @@ idf_component_register(
         "clusters/identify_cluster.c"
         "clusters/power_config_cluster.c"
         "clusters/battery_runtime_cluster.c"
+        "clusters/ota_cluster.c"
         "handlers/attribute_handler.c"
         "handlers/read_request_handler.c"
         "battery/battery.c"
@@ -30,6 +31,7 @@ idf_component_register(
         "battery"
     REQUIRES
         nvs_flash
+        app_update
         esp_timer
         esp_pm
         esp_driver_gpio

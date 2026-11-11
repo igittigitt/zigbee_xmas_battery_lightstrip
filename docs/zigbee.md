@@ -29,6 +29,7 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 | Level Control | `0x0008` | ZHA-Vorlage + Erweiterung | Die Befehle (MoveToLevel, Move, Step, Stop, jeweils auch WithOnOff) verarbeitet der Stack. Jede Änderung von `CurrentLevel` meldet er per `SET_ATTR_VALUE`, wie im 2.0.5-Beispiel `color_dimmable_light`. `CurrentLevel` 0x00–0xFE wird auf die Ein-Helligkeit 1–255 des Licht-Moduls abgebildet (`light_set_on_level()`, Rampe Z3). Ist das Licht aus, wird die Helligkeit nur gespeichert. Zusätzlich `StartUpCurrentLevel` (`0x4000`, Default `ZB_START_UP_CURRENT_LEVEL_DEFAULT` = 0xFF vorherige, Z13). `CurrentLevel` und `StartUpCurrentLevel` sind persistent ([level_cluster.c](../main/clusters/level_cluster.c)) |
 | Power Configuration | `0x0001` | [power_config_cluster.c](../main/clusters/power_config_cluster.c) | `BatteryVoltage` (100 mV, abgerundet: 3379 mV → 33 = 3,3 V, damit der Wert nie über der Messung liegt) und `BatteryPercentageRemaining` (0,5 %) aus der Akkumessung (Z7, [battery.c](../main/battery/battery.c)): beim Start und alle 15 min, Ladestand nur bei LED aus und geglättet. Beide Attribute sind meldefähig (`EZB_ZCL_ATTR_ACCESS_REPORTING`). Schlägt die Messung fehl: `0xFF` (ungültig/unbekannt). **DEBUG-Build** ohne `CONFIG_ZL_DEBUG_BATTERY_ADC`: `BatteryPercentageRemaining` = `CONFIG_ZL_DEBUG_BATTERY_PERCENT` × 2 (Default 95 % → 190), `BatteryVoltage` = `0xFF`. Details: [hardware.md](hardware.md#firmware-umsetzung-z7) |
 | Restlaufzeit (herstellerspezifisch) | `0xFC00` | [battery_runtime_cluster.c](../main/clusters/battery_runtime_cluster.c) | Eigener Cluster (`ezb_zcl_custom_create_cluster_desc`, `ezbee/zcl/cluster/custom.h`), Attribute ohne Herstellercode, nur lesbar und meldefähig. `0x0000` RemainingOnTime (uint16, 0,1 h): wie lange das Licht mit der aktuellen Ein-Helligkeit noch leuchten kann. `0x0001` RemainingDays (uint16, 0,1 d): Tage bei der durchschnittlichen Nutzung der letzten 7 Tage. `0x0002` BatteryVoltageMv (uint16, 1 mV): letzte Akkumessung in voller Auflösung, gesetzt bei jeder Messung zusammen mit `BatteryVoltage` ([power_config_cluster.c](../main/clusters/power_config_cluster.c)); das Standardattribut kann nur 100-mV-Schritte. **Zellkonfiguration (Z15), beschreibbar:** `0x0010` CellType (enum8: 0 = generisch Li-Ion, 1 = Samsung INR18650-35E), `0x0011` CellCapacity (uint16, mAh je Zelle, 100–20000), `0x0012` CellsParallel (uint8, 1–8). Werte außerhalb lehnt `check_value_cb` mit INVALID_VALUE ab; `write_attr_cb` koppelt Typ und Kapazität, speichert im NVS, setzt den Zähler auf den Ladestand aus der Spannung und schickt die Werte per Report an den Coordinator. `0xFFFF` = unbekannt, die Tage sind das bis zum ersten vollen Tag Laufzeit, die Spannung ohne Messung (DEBUG ohne ADC). Quelle ist das Verbrauchsmodell (Z14, [battery_model.c](../main/battery/battery_model.c)), Aktualisierung stündlich. Die Ströme sind Platzhalter, die Werte also Schätzungen. Z2M zeigt den Cluster nur mit dem External Converter an (siehe unten) |
+| OTA Upgrade (**Client**) | `0x0019` | [ota_cluster.c](../main/clusters/ota_cluster.c) | Firmware-Update über Zigbee (Z16). Client-Rolle = Output-Cluster; daran erkennt Z2M, dass das Gerät OTA kann. ManufacturerID `0x131B`, ImageTypeID `0x5A4C`, CurrentFileVersion `ZB_OTA_FILE_VERSION` ([zigbee_config.h](../main/zigbee_config.h)). Ablauf siehe [OTA-Update](#ota-update-z16) |
 
 ### Einschaltverhalten (Z6)
 
@@ -160,3 +161,59 @@ Prüfen, wenn das Gerät gepairt ist.
 ### Gerät neu anlernen
 
 `idf.py -p COM5 erase-flash` löscht auch die NVS-Partition und damit das Pairing. Später geht das per Taster (Z5) mit `zigbee_device_factory_reset()`.
+
+## OTA-Update (Z16)
+
+Umgesetzt am 2026-11-11, **auf Hardware ungetestet** (offene Punkte: [known-issues.md](known-issues.md), Punkt 20).
+
+### Ablauf
+
+1. In HA an der Entität „Firmware“ (Typ `update`) auf **Installieren** klicken. Z2M legt sie an, weil der Converter `ota: true` setzt (zigbee2mqtt `lib/extension/homeassistant.ts`). Der Button sendet `zigbee2mqtt/bridge/request/device/ota_update/update`.
+2. Z2M schickt ein **Image Notify** und wartet **60 s** auf einen QueryNextImageRequest des Geräts (zigbee-herdsman `src/controller/model/device.ts`, `#notifyOta`). Das Gerät holt das Image Notify beim nächsten Poll beim Parent ab. Ob das mit dem 2-s-Keepalive klappt, ist [UNBELEGT]. Antwortet das Gerät nicht, meldet Z2M „Device didn't respond to OTA request“.
+3. Der Stack lädt die Datei blockweise. [ota_cluster.c](../main/clusters/ota_cluster.c) prüft Kennung, Herstellercode und Image-Typ im Dateikopf und schreibt das Sub-Element „Upgrade Image“ (Tag `0x0000`) mit `esp_ota_write` in den freien OTA-Slot. Währenddessen steht der Keepalive auf `ZB_OTA_KEEP_ALIVE_MS`. HA zeigt den Fortschritt (Z2M meldet ihn alle 30 s, Z2M-Doku „OTA updates“).
+4. Nach dem Download prüft `esp_ota_end` das Image („validate newly written app image“, ESP-IDF API-Referenz `esp_ota_end`). `esp_ota_set_boot_partition` schaltet um, und nach `ZB_OTA_REBOOT_DELAY_MS` startet das Gerät neu.
+5. Das neue Image startet im Zustand PENDING_VERIFY (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`). Nach dem Rejoin bestätigt es sich (`ota_cluster_confirm_image()` in `on_network_joined`). Ohne Join und nach einem Reset läuft wieder die alte Firmware: „otherwise the application will be rolled back upon reboot“ (ESP-IDF-Doku [OTA, App rollback](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32h2/api-reference/system/ota.html)).
+
+Ein Download wird abgelehnt, wenn die letzte Akkumessung unter `BATTERY_WARN_MV` (3,3 V) liegt. Das Gerät fragt nie von sich aus nach Updates. Es gibt also kein zusätzliches Wecken (Entscheidung 2026-11-11).
+
+Nach dem Update gilt `StartUpOnOff` (Z6): Mit dem Default „aus“ ist ein vorher eingeschaltetes Licht danach aus.
+
+### OTA-Datei bauen
+
+1. In [zigbee_config.h](../main/zigbee_config.h) `ZB_OTA_APP_BUILD` (oder `ZB_OTA_APP_RELEASE`) erhöhen. Z2M bietet ein Image nur an, wenn dessen `fileVersion` **größer** ist als die des Geräts (zigbee-herdsman `checkOta`). Gleiche Version wird nicht unterstützt (Z2M-Doku).
+2. Produktiv-Firmware bauen (`build_release`, siehe [setup-build.md](setup-build.md#debug-schalter)).
+3. Die Zigbee-OTA-Datei erzeugen mit `tools/image_builder_tool/image_builder_tool.py` aus [esp-zigbee-sdk @ e2fdf4ad](https://github.com/espressif/esp-zigbee-sdk/tree/e2fdf4ad/tools/image_builder_tool) (Python-Script, nicht Teil der Komponente):
+
+   ```powershell
+   python image_builder_tool.py -m 0x131B -i 0x5A4C -v 0x01012000 --tag 0x0000 build_release/zigbee_node.bin
+   ```
+
+   `-v` = neue `ZB_OTA_FILE_VERSION` (Beispiel: App 1, Build 1, Stack 0x20/0x00). `--tag` erwartet Tag-ID und Datei **durch Leerzeichen getrennt**, so steht es im argparse des Scripts. Die SDK-Doku `zcl_ota_upgrade.rst` zeigt `0x0000:datei`; das passt nicht zum Script. Ergebnis: `131B-5A4C-01012000-ota-file.zigbee`.
+
+### Z2M einrichten
+
+1. Die `.zigbee`-Datei ins Z2M-Datenverzeichnis legen (neben `configuration.yaml`).
+2. Daneben einen OTA-Index `zl-ota-index.json` anlegen. Das Format entspricht dem Index von [Koenkk/zigbee-OTA](https://github.com/Koenkk/zigbee-OTA/blob/master/README.md). Ist `url` ein lokaler Pfad, liest zigbee-herdsman fehlende Felder (`imageType`, `manufacturerCode`, `fileVersion`) aus dem Dateikopf (`getOtaIndex` in `src/controller/helpers/ota.ts`; aus dem Quelltext gelesen, nicht getestet):
+
+   ```json
+   [
+     {
+       "url": "131B-5A4C-01012000-ota-file.zigbee",
+       "modelId": "ZL-LightChain"
+     }
+   ]
+   ```
+
+   `modelId` begrenzt das Image auf dieses Gerät, weil `0x131B` der Espressif-Code ist.
+3. In der `configuration.yaml` eintragen und Z2M neu starten (Option mit `requiresRestart`):
+
+   ```yaml
+   ota:
+     zigbee_ota_override_index_location: zl-ota-index.json
+     # optional, Default 50, Maximum 100 (Bytes je Block); größer = schneller, ungetestet
+     # default_maximum_data_size: 100
+   ```
+
+4. Nach der Erstinstallation der OTA-Firmware das Gerät **neu interviewen**, denn die Clusterliste hat sich geändert (neuer Output-Cluster `0x0019`). Erst dann erscheint die Update-Entität. In HA bzw. Z2M „Auf Update prüfen“ ausführen. Danach zeigt die Entität installierte und neueste Version.
+
+**Dauer:** nicht gemessen. Rechnung (640 KiB, 50 B je Block, 250 ms Z2M-Blockverzögerung `image_block_response_delay`, ohne Funkfehler): ≥ 55 min. Zum Vergleich das Espressif-Beispiel (Router, 223 B je Block): ≈ 5,5 min für 501 KB (Log im README von `examples/ota_upgrade/ota_client`).

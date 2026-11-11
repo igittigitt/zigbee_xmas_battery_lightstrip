@@ -138,6 +138,7 @@ Default-Level ist `INFO`, maximal `DEBUG` kompilierbar (`CONFIG_LOG_MAXIMUM_LEVE
 | `ON_OFF_CLUSTER` | on_off_cluster.c |
 | `IDENTIFY_CLUSTER` | identify_cluster.c |
 | `POWER_CFG_CLUSTER` | power_config_cluster.c |
+| `OTA_CLUSTER` | ota_cluster.c (Z16) |
 | `ATTR_HANDLER` | attribute_handler.c |
 | `BATTERY` | battery/battery.c |
 | `POWER_MGMT` | power_management.c |
@@ -171,13 +172,19 @@ Alternative: USB-Kabel mit unterbrochener VBUS-Ader (nur Daten). Das ist für de
 
 ## Partitionstabelle
 
-[partitions.csv](../partitions.csv) ist über `CONFIG_PARTITION_TABLE_CUSTOM=y` aktiv. Das Layout folgt den 2.0.5-Beispielen, nur ohne `otadata`, weil es noch kein OTA gibt:
+[partitions.csv](../partitions.csv) ist über `CONFIG_PARTITION_TABLE_CUSTOM=y` aktiv. Seit 2026-11-11 ist das Layout OTA-fähig (Z16). Es folgt dem 2.0.5-Beispiel `examples/ota_upgrade/ota_client`, aber mit zwei OTA-Slots und ohne `factory`. ESP-IDF verlangt für OTA „at least two OTA app slot partitions (i.e., `ota_0` and `ota_1`) and an OTA Data Partition“ ([ESP-IDF-Doku OTA](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32h2/api-reference/system/ota.html)):
 
-| Partition | Größe | Inhalt |
-|---|---|---|
-| `nvs` | 24 KB | NVS der Anwendung **und** Zigbee-Datensätze (`ZB_STORAGE_PARTITION_NAME`) |
-| `phy_init` | 4 KB | PHY-Kalibrierdaten |
-| `factory` | 940 KB | Firmware (Build 2026-11-07: 586 KB) |
-| `zb_fct` | 1 KB | optionale Zigbee-Werksdaten |
+| Partition | Offset | Größe | Inhalt |
+|---|---|---|---|
+| `nvs` | 0x9000 | 24 KB | NVS der Anwendung **und** Zigbee-Datensätze (`ZB_STORAGE_PARTITION_NAME`) |
+| `otadata` | 0xF000 | 8 KB | welcher OTA-Slot bootet, Rollback-Zustand |
+| `phy_init` | 0x11000 | 4 KB | PHY-Kalibrierdaten |
+| `ota_0` | 0x20000 | 1536 KB | Firmware (Slot A; hierhin schreibt `idf.py flash`) |
+| `ota_1` | 0x1A0000 | 1536 KB | Firmware (Slot B) |
+| `zb_fct` | 0x320000 | 1 KB | optionale Zigbee-Werksdaten |
 
-Die Offsets vergibt das Build-System automatisch.
+Die Offsets vergibt das Build-System; die Werte oben sind nachgerechnet (Partitionstabelle bei 0x8000, App-Partitionen auf 64 KB ausgerichtet) und stehen im Kommentar der CSV. Firmwaregröße am 2026-11-11: 610–645 KB je nach DEBUG-Stufe.
+
+**Umstieg auf das OTA-Layout:** einmal per USB flashen (`idf.py -p COMx flash`, Bootloader und Partitionstabelle ändern sich). **Kein** `erase-flash`: `nvs` liegt unverändert bei 0x9000, das Pairing sollte erhalten bleiben (nicht getestet). `idf.py flash` schreibt auch eine leere `otadata`, dann bootet `ota_0`. Neue Defaults in `sdkconfig.defaults` (hier `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`) wirken erst, wenn die jeweilige `sdkconfig` neu erzeugt wird (löschen oder `idf.py fullclean`).
+
+**Rollback:** `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`. Ein per OTA geladenes Image muss sich bestätigen, sonst bootet nach dem nächsten Reset wieder das alte, siehe [zigbee.md](zigbee.md#ota-update-z16). Ein per USB geflashtes Image ist davon nicht betroffen.

@@ -1,9 +1,20 @@
 # Name,   Type, SubType, Offset,  Size, Flags
-# Layout follows esp-zigbee-sdk 2.0.5 examples (light_sleep_end_device/partitions.csv),
-# without otadata (no OTA yet). Zigbee 2.x stores its persistent data in "nvs"
-# (storage_partition_name in zigbee_config.h); zb_fct holds optional factory data.
+# OTA layout (goal Z16), based on esp-zigbee-sdk 2.0.5 examples/ota_upgrade/ota_client/partitions.csv,
+# but with two OTA slots and without factory: ESP-IDF OTA "requires ... at least two OTA app slot
+# partitions (i.e., ota_0 and ota_1) and an OTA Data Partition" (ESP-IDF v5.5 api-reference/system/ota.html).
+# Zigbee 2.x stores its persistent data in "nvs" (storage_partition_name in zigbee_config.h);
+# zb_fct holds optional factory data.
+#
+# nvs MUST stay first with the same size: it keeps offset 0x9000 as before OTA, so a USB flash of
+# this table keeps the network pairing. Resulting offsets (partition table at 0x8000, app partitions
+# 64 KiB aligned):
+#   nvs 0x9000-0xF000, otadata 0xF000-0x11000, phy_init 0x11000-0x12000,
+#   ota_0 0x20000-0x1A0000, ota_1 0x1A0000-0x320000, zb_fct 0x320000 (1K) -> end below 4 MB (0x400000).
+# ota_0 starts at 0x20000 like the former factory partition. App size 2026-11-11: ~610-645 KiB.
 # Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap
 nvs,        data, nvs,      ,        0x6000,
+otadata,    data, ota,      ,        0x2000,
 phy_init,   data, phy,      ,        0x1000,
-factory,    app,  factory,  ,        940K,
+ota_0,      app,  ota_0,    ,        1536K,
+ota_1,      app,  ota_1,    ,        1536K,
 zb_fct,     data, fat,      ,        1K,

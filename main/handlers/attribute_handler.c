@@ -4,6 +4,7 @@
 #include "on_off_cluster.h"
 #include "level_cluster.h"
 #include "identify_cluster.h"
+#include "ota_cluster.h"
 #include "debug_marker.h"
 
 static const char *TAG = "ATTR_HANDLER";
@@ -54,6 +55,14 @@ void attribute_handler_callback(ezb_zcl_core_action_callback_id_t callback_id, v
 
     case EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID:
         identify_cluster_trigger_effect(message);
+        break;
+
+    case EZB_ZCL_CORE_OTA_UPGRADE_CLIENT_PROGRESS_CB_ID:
+        ota_cluster_progress(message);
+        break;
+
+    case EZB_ZCL_CORE_OTA_UPGRADE_QUERY_NEXT_IMAGE_RSP_CB_ID:
+        ota_cluster_query_next_image_rsp(message);
         break;
 
     case EZB_ZCL_CORE_DEFAULT_RSP_CB_ID:

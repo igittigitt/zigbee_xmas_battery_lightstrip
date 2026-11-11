@@ -153,6 +153,57 @@
 #define ZB_DIAG_SCAN_DURATION           3
 
 /* ---------------------------------------------------------------------------
+ * OTA upgrade (goal Z16), OTA Upgrade client cluster 0x0019 on ZB_ENDPOINT
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Identity of the OTA image (Zigbee OTA file header and OTA client attributes
+ * ManufacturerID / ImageTypeID). Zigbee2MQTT matches an image by manufacturer
+ * code AND image type (zigbee-herdsman device.ts findMatchingOtaImage).
+ * 0x131B = Espressif, as in the esp-zigbee-sdk 2.0.5 example ota_client
+ * (own manufacturer codes are assigned by the CSA). Image type: own choice
+ * ("ZL"); the OTA index additionally restricts the image to modelId
+ * ZB_MODEL_IDENTIFIER. Changing these values requires a new OTA file.
+ */
+#define ZB_OTA_MANUFACTURER_CODE        0x131B
+#define ZB_OTA_IMAGE_TYPE               0x5A4C
+
+/**
+ * File version of THIS firmware (CurrentFileVersion). Zigbee2MQTT offers an
+ * image only if its file version is strictly greater (zigbee-herdsman checkOta)
+ * -> increase ZB_OTA_APP_BUILD (or _RELEASE) for every firmware that is
+ * distributed via OTA. Layout per ezbee/zcl/cluster/ota_file.h:
+ * app release | app build | stack release | stack build (one byte each).
+ * Stack part 0x20 0x00 as in the Espressif example (stack release 2.0).
+ */
+#define ZB_OTA_APP_RELEASE              0x01
+#define ZB_OTA_APP_BUILD                0x00
+#define ZB_OTA_STACK_RELEASE            0x20
+#define ZB_OTA_STACK_BUILD              0x00
+#define ZB_OTA_FILE_VERSION             (((uint32_t)ZB_OTA_APP_RELEASE << 24) | ((uint32_t)ZB_OTA_APP_BUILD << 16) | \
+                                         ((uint32_t)ZB_OTA_STACK_RELEASE << 8) | (uint32_t)ZB_OTA_STACK_BUILD)
+
+/**
+ * MaximumDataSize of the Image Block Request (ezb_zcl_ota_upgrade_set_download_block_size).
+ * 223 is recommended in the esp-zigbee-sdk 2.0.5 ota_client README; Zigbee2MQTT
+ * sends min(this, its default_maximum_data_size), default 50, maximum 100.
+ */
+#define ZB_OTA_BLOCK_SIZE               223
+
+/**
+ * Keepalive interval while an image is downloaded: the image blocks are
+ * buffered at the parent and only arrive when the device polls. 200 ms = the
+ * stack's default fast poll interval (ezbee/nwk.h, ezb_nwk_set_fast_poll_interval).
+ * Whether a shorter keepalive speeds up the download is not documented
+ * [UNBELEGT] - verify by measurement (docs/known-issues.md). Restored to
+ * ZB_KEEP_ALIVE_MS after the download.
+ */
+#define ZB_OTA_KEEP_ALIVE_MS            200
+
+/** Delay between the end of the OTA transfer and the restart into the new image (own choice). */
+#define ZB_OTA_REBOOT_DELAY_MS          2000
+
+/* ---------------------------------------------------------------------------
  * Platform
  * ------------------------------------------------------------------------- */
 
