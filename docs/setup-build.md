@@ -77,6 +77,13 @@ Umschalten:
   idf.py -B build_l3diag -D SDKCONFIG=build_l3diag/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;level3.defaults;diag_noledc.defaults" build
   ```
 
+**VS Code (ESP-IDF-Erweiterung), seit 2026-11-11:**
+
+- **Profile:** [CMakePresets.json](../CMakePresets.json) im Repo enthält die Profile `release` (`build_release`), `debug` (Level 1, `build`), `level2` (`build_l2`) und `level3` (`build_l3`) mit denselben `SDKCONFIG`/`SDKCONFIG_DEFAULTS` wie die Befehle oben. Auswahl per Befehlspalette **`ESP-IDF: Select Project Configuration`**; das aktive Profil steht in der Statusleiste, die Auswahl merkt sich die Erweiterung je Workspace. Laut Doku wendet die Erweiterung das gewählte Profil „when building/flashing/monitoring“ an. Quelle: [Project Configuration](https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/additionalfeatures/project-configuration.html), [Multiple Projects](https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/additionalfeatures/multiple-projects.html) (gelesen am 2026-11-11, Doku-Stand „latest“; ob die installierte Version der Erweiterung `CMakePresets.json` schon unterstützt, ist nicht geprüft).
+- **Ohne gewähltes Profil:** Die lokale `.vscode/settings.json` (gitignored) setzt `idf.buildPath`, `idf.sdkconfigFilePath` und `idf.sdkconfigDefaults` auf den Release-Build, damit der Flash-Button standardmäßig das Produktiv-Image schreibt. Ohne diese Einstellung nimmt die Erweiterung `build` (Default von `idf.buildPath`, [Settings](https://docs.espressif.com/projects/vscode-esp-idf-extension/en/latest/settings.html)), also Level 1.
+- Kontrolle nach dem Flashen: Startlog `Light initialised, backend: pwm (DEBUG level 0)`.
+- `CMakePresets.json` wirkt nur in der Erweiterung bzw. bei `cmake --preset`; `idf.py` ohne `-B`/`-D` baut weiter Level 1 nach `build`.
+
 **Welche Firmware läuft?** Maßgeblich ist die Zeile `app_init: ELF file SHA256:` im Startlog. Sie mit dem Hash des Builds vergleichen, z. B. `sha256sum build_l3/zigbee_node.elf` (die ersten 9 Zeichen). Die Zeile `app_init: Compile time:` taugt dafür nicht: Am 2026-11-09 zeigte sie nach dem Flashen eines neuen inkrementellen Builds noch die Zeit eines älteren Builds, obwohl der SHA256 bewies, dass die neue Firmware lief. Die Monitor-Warnung „Checksum mismatch between flashed and built applications“ bedeutet nur, dass der Monitor mit einem anderen Build-Verzeichnis vergleicht. `idf.py monitor` deshalb mit denselben `-B …`/`-D SDKCONFIG=…`-Angaben wie beim Flashen starten.
 
 ### PPK2-Marker (Level 3)

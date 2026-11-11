@@ -1,0 +1,57 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "cacheVariables": {
+        "IDF_TARGET": "esp32h2"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Level 0, Produktiv)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build_release",
+      "cacheVariables": {
+        "SDKCONFIG": "${sourceDir}/build_release/sdkconfig",
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;release.defaults"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (Level 1, USB, Onboard-LED)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "SDKCONFIG": "${sourceDir}/sdkconfig",
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults"
+      }
+    },
+    {
+      "name": "level2",
+      "displayName": "Level 2 (Energiespar-Tests)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build_l2",
+      "cacheVariables": {
+        "SDKCONFIG": "${sourceDir}/build_l2/sdkconfig",
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;level2.defaults"
+      }
+    },
+    {
+      "name": "level3",
+      "displayName": "Level 3 (PPK2-Strommessung)",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build_l3",
+      "cacheVariables": {
+        "SDKCONFIG": "${sourceDir}/build_l3/sdkconfig",
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;level3.defaults"
+      }
+    }
+  ]
+}
