@@ -136,7 +136,7 @@ Direkt nach dem Laden des Converters zeigen die neuen Werte **N/A**. Z2M hat sie
 | Voltage (mV) | Herstellercluster `0xFC00` | Messwert in voller Auflösung (das Standardattribut hätte nur 100-mV-Schritte). Messung alle 15 min, Report höchstens stündlich, spätestens alle 4 h oder bei ≥ 10 mV Änderung. Bei eingeschaltetem Licht unter Last gemessen |
 | Restlaufzeit Licht an (h) | Herstellercluster `0xFC00` | Schätzung aus dem Verbrauchsmodell, stündlich aktualisiert |
 | Zelltyp, Kapazität je Zelle, Zellen parallel | Herstellercluster `0xFC00` | Einstellbar (Abschnitt „Konfiguration“). „Samsung INR18650-35E“ setzt 3350 mAh; eine andere Kapazität schaltet auf „Generisch Li-Ion“. Bei mehreren Zellen parallel die Anzahl eintragen |
-| Restlaufzeit (d) | Herstellercluster `0xFC00` | Schätzung bei der Nutzung der letzten 7 Tage. Bis ein voller Tag gezählt ist, unbekannt (Anzeige vermutlich 6553,5) |
+| Restlaufzeit (d) | Herstellercluster `0xFC00` | Schätzung bei der Nutzung der letzten 7 Tage. Bis ein voller Tag gezählt ist, unbekannt (in HA leer bzw. „unbekannt“) |
 
 Die Restlaufzeit-Werte sind **noch nicht belastbar**. Die Ströme im Verbrauchsmodell sind Platzhalter, bis sie gemessen sind (siehe [docs/known-issues.md](docs/known-issues.md)). Battery, Voltage und die Restlaufzeit sind in HA Diagnose-Entitäten. Sie stehen auf der Geräteseite im Abschnitt „Diagnose“.
 

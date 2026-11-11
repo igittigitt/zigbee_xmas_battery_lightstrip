@@ -1,3 +1,5 @@
+#include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
 #include "esp_check.h"
 #include "esp_log.h"
@@ -18,6 +20,7 @@ static const char *TAG = "CLUSTER_MANAGER";
 
 static uint8_t s_manufacturer_name[ZCL_STRING_MAX_LEN + 1];
 static uint8_t s_model_identifier[ZCL_STRING_MAX_LEN + 1];
+static uint8_t s_sw_build_id[ZB_SW_BUILD_ID_MAX_LEN + 1];
 
 static void zcl_string_from_cstr(uint8_t *dst, const char *src)
 {
@@ -40,6 +43,16 @@ static esp_err_t basic_add_identity(ezb_af_ep_desc_t ep_desc)
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_zcl_basic_cluster_desc_add_attr(
                             basic, EZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, s_model_identifier)),
                         TAG, "ModelIdentifier");
+
+    char sw_build_id[ZB_SW_BUILD_ID_MAX_LEN + 1];
+    snprintf(sw_build_id, sizeof(sw_build_id), ZB_SW_BUILD_ID_FORMAT,
+             (unsigned)ZB_OTA_APP_RELEASE, (unsigned)ZB_OTA_APP_BUILD);
+    s_sw_build_id[0] = (uint8_t)strnlen(sw_build_id, ZB_SW_BUILD_ID_MAX_LEN);
+    memcpy(&s_sw_build_id[1], sw_build_id, s_sw_build_id[0]);
+    ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_zcl_basic_cluster_desc_add_attr(
+                            basic, EZB_ZCL_ATTR_BASIC_SW_BUILD_ID_ID, s_sw_build_id)),
+                        TAG, "SWBuildID");
+    ESP_LOGI(TAG, "SWBuildID %s, OTA file version 0x%08" PRIx32, sw_build_id, (uint32_t)ZB_OTA_FILE_VERSION);
     return ESP_OK;
 }
 

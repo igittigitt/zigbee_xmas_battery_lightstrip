@@ -184,6 +184,16 @@
                                          ((uint32_t)ZB_OTA_STACK_RELEASE << 8) | (uint32_t)ZB_OTA_STACK_BUILD)
 
 /**
+ * Basic cluster SWBuildID (0x4000): readable version "<app release>.<app build>"
+ * derived from the values above, e.g. "1.0". Zigbee2MQTT shows it as the device
+ * firmware in Home Assistant (sw_version = softwareBuildID, zigbee2mqtt
+ * lib/extension/homeassistant.ts). ZCL character string, max. 16 characters
+ * (default value with 16 characters in compat/zcl/esp_zigbee_zcl_basic.h).
+ */
+#define ZB_SW_BUILD_ID_FORMAT           "%u.%u"
+#define ZB_SW_BUILD_ID_MAX_LEN          16
+
+/**
  * MaximumDataSize of the Image Block Request (ezb_zcl_ota_upgrade_set_download_block_size).
  * 223 is recommended in the esp-zigbee-sdk 2.0.5 ota_client README; Zigbee2MQTT
  * sends min(this, its default_maximum_data_size), default 50, maximum 100.

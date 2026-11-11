@@ -21,7 +21,7 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 
 | Cluster | ID | Herkunft | Inhalt / Verhalten |
 |---|---|---|---|
-| Basic | `0x0000` | ZHA-Vorlage | ManufacturerName `zigbee-light`, ModelIdentifier `ZL-LightChain` (`ZB_MANUFACTURER_NAME`/`ZB_MODEL_IDENTIFIER`), PowerSource = `0x03` Battery |
+| Basic | `0x0000` | ZHA-Vorlage | ManufacturerName `zigbee-light`, ModelIdentifier `ZL-LightChain` (`ZB_MANUFACTURER_NAME`/`ZB_MODEL_IDENTIFIER`), SWBuildID z. B. `1.0` (aus `ZB_OTA_APP_RELEASE`/`_BUILD`), PowerSource = `0x03` Battery |
 | Identify | `0x0003` | ZHA-Vorlage | Identify → Lichterkette blinkt `ZB_IDENTIFY_DURATION_MS` (2 s) mit `ZB_IDENTIFY_BLINK_HZ` (5 Hz), danach vorheriger Zustand (Z11), [identify_cluster.c](../main/clusters/identify_cluster.c) |
 | Groups | `0x0004` | ZHA-Vorlage | Verwaltet der Stack |
 | Scenes | `0x0005` | ZHA-Vorlage | Verwaltet der Stack |
@@ -146,7 +146,7 @@ Schritt-für-Schritt-Anleitung für Anwender: [README.md](../README.md#einrichtu
 Grundlage der Converter-Funktionen ist `src/lib/modernExtend.ts` von zigbee-herdsman-converters (Branch master, gelesen am 2026-11-08). Daraus belegt sind `deviceAddCustomCluster`, die Optionen von `battery()`, `light()` und `identify()` sowie das Format von `reporting` (`min`/`max`/`change`, Zeitangaben wie `"1_HOUR"`). Nur aus einer Zusammenfassung des Quelltexts stammen und sind deshalb **[UNBELEGT]**:
 - die Feldnamen `cluster`/`attribute` von `numeric()` (Laden und Exposes am 2026-11-08 bestätigt, Werte noch nicht),
 - dass `scale: 10` den Rohwert durch 10 teilt,
-- dass `numeric()` den Wert `0xFFFF` nicht ausfiltert. Unbekannte Tage würden dann als 6553,5 d erscheinen.
+- ~~dass `numeric()` den Wert `0xFFFF` nicht ausfiltert~~ Widerlegt (2026-11-11, Z2M-Log `Exception while calling fromZigbee converter: Value is not a number, got number (NaN)`, `remaining_days` fehlte im Payload). zigbee-herdsman dekodiert den ZCL-Ungültigwert eines uint16 (`0xFFFF`) als `NaN` (`src/zspec/zcl/utils.ts`, `ZCL_TYPE_INVALID_BY_TYPE`, Branch master, gelesen am 2026-11-11). Der Standard-Converter von `numeric()` wirft dann in `assertNumber` (`src/lib/modernExtend.ts`). Deshalb haben `voltage`, `remaining_light_hours` und `remaining_days` im Converter ein eigenes `fzConvert` (`unknownAsNull`), das `NaN` als `null` meldet. HA zeigt dann „unbekannt“. Die Wirkung ist am Gerät noch nicht geprüft.
 
 Prüfen, wenn das Gerät gepairt ist.
 
@@ -157,6 +157,25 @@ Prüfen, wenn das Gerät gepairt ist.
 - **Read-Requests** (Refresh in Z2M/HA, `convertGet`): [read_request_handler.c](../main/handlers/read_request_handler.c) sieht jeden eingehenden Frame vor dem Stack (`ezb_apsde_data_indication_handler_register`, `ezbee/aps.h`: Rückgabe `false` = der Stack verarbeitet ihn danach). Bei *Read Attributes* (globaler Befehl `0x00`, Header nach ZCL-Spezifikation 07-5123 Kap. 2.4.1) auf Endpoint 1 loggt er Cluster und jedes Attribut (Tag `READ_REQUEST`). Messwerte (`0x0001`/`0x0020`, `0x0021`, `0xFC00`/`0x0002`) werden vorher neu gemessen, berechnete Werte (`0xFC00`/`0x0000`, `0x0001`) neu berechnet; die Antwort des Stacks enthält dann die frischen Werte. Alles andere (z. B. `OnOff`, `CurrentLevel`) ist ein Zustand und wird so beantwortet, wie es gespeichert ist. Die Messung blockiert den Zigbee-Task einige ms (16 ADC-Samples). Ohne ADC (DEBUG) bleibt es beim gespeicherten Wert.
 - Manuell lesen: in Z2M unter *Exposes* beim Akku auf „Refresh“ klicken (`convertGet` liest `batteryPercentageRemaining` und `batteryVoltage`, letzteres auch mit `voltage: false`, ohne Anzeige). Die mV-Spannung hat ein eigenes „Refresh“.
 - In HA sind `battery` und `voltage` Diagnose-Entitäten (`withCategory("diagnostic")` bzw. `entityCategory: 'diagnostic'`), auf der Geräteseite im Abschnitt „Diagnose“.
+
+### Gerätebild
+
+Z2M hat für `ZL-LightChain` kein offizielles Gerätebild und zeigt einen Platzhalter. Ein eigenes Bild geht nur **pro Gerät** über die Geräteoption `icon` in der `configuration.yaml` von Z2M ([Z2M-Doku „Devices and Groups“](https://www.zigbee2mqtt.io/guide/configuration/devices-groups.html), gelesen am 2026-11-11). Im Converter lässt es sich nicht hinterlegen: `Definition` in zigbee-herdsman-converters `src/lib/types.ts` hat kein Feld `icon` (Branch master, gelesen am 2026-11-11).
+
+```yaml
+devices:
+  '0x<ieee-adresse>':
+    friendly_name: Lichterkette
+    icon: device_icons/zl-lightchain.png
+```
+
+- Erlaubt sind laut Doku ein Pfad im Ordner `device_icons` neben der `configuration.yaml` (andere Ordner nicht) oder eine vollständige URL.
+- **Eintragen über das Z2M-Frontend**, nicht von Hand in der YAML: Gerät → Einstellungen → Feld `icon` → speichern. So am Gerät bestätigt (2026-11-11, Z2M als HA-Add-on). Von Hand bei laufendem Z2M eingetragene `icon`-Zeilen waren nach einem Neustart wieder aus der `configuration.yaml` verschwunden. Ich glaube es könnte so sein: Z2M schreibt die Datei aus seinem Speicherstand neu. Wer von Hand editiert, Z2M vorher stoppen.
+- Hochladen nach `device_icons` über das HA-Add-on „File editor“ scheiterte mit HTTP 413 (Datei zu groß; Grenze **[UNBELEGT]**). Abhilfe: Bild verkleinern oder per Samba share / Studio Code Server kopieren.
+- Z2M-Frontend → Werkzeuge → „Gerätebilder lokalisieren“ meldet für `ZL-LightChain`-Geräte „Error“ (beobachtet 2026-11-11). Ich glaube es könnte so sein: Die Funktion lädt offizielle Bilder von zigbee2mqtt.io, und für dieses Modell gibt es keins. Ob sie ein eigenes `icon` überschreibt, ist **[UNBELEGT]**.
+- Bildformat: Für `icon` nennt die Doku keine Anforderungen **[UNBELEGT]**: welche Dateitypen gehen, Höchstgröße, Anzeigegröße. Offizielle Gerätebilder müssen PNG, 512 × 512 px und mit transparentem Hintergrund sein ([Z2M-Doku „Support new devices“, Abschnitt 5](https://www.zigbee2mqtt.io/advanced/support-new-devices/01_support_new_devices.html)). Eigene Wahl: dieselben Werte für das eigene Bild.
+- Das Bild erscheint im Z2M-Frontend. Ein Weg, ein Gerätebild auf die HA-Geräteseite zu bringen, ist nicht bekannt. Über `homeassistant:` (gleiche Doku) lassen sich nur die Icons der Entitäten ändern (z. B. `icon: mdi:string-lights`).
+- Die Update-Entität „Firmware“ (siehe [OTA-Update](#ota-update-z16)) zeigt in HA das Z2M-Logo. Laut einer Zusammenfassung von zigbee2mqtt `lib/extension/homeassistant.ts` setzt Z2M dort fest `entity_picture` auf `…/images/logo.png`; verbatim nicht gelesen, **[UNBELEGT]**.
 
 ### Gerät neu anlernen
 
@@ -177,6 +196,11 @@ Umgesetzt am 2026-11-11, **auf Hardware ungetestet** (offene Punkte: [known-issu
 Ein Download wird abgelehnt, wenn die letzte Akkumessung unter `BATTERY_WARN_MV` (3,3 V) liegt. Das Gerät fragt nie von sich aus nach Updates. Es gibt also kein zusätzliches Wecken (Entscheidung 2026-11-11).
 
 Nach dem Update gilt `StartUpOnOff` (Z6): Mit dem Default „aus“ ist ein vorher eingeschaltetes Licht danach aus.
+
+### Versionsnummer in HA
+
+- **Entität „Firmware“** (Abschnitt *Konfiguration* auf der Geräteseite): „Installierte Version“ und „Neueste Version“ sind `update.installed_version`/`latest_version` aus dem Z2M-Status. Das ist die 32-Bit-`fileVersion` als **Dezimalzahl** (`installed_version: state.current.fileVersion`, zigbee2mqtt `lib/extension/otaUpdate.ts`). Beispiel: `0x01002000` erscheint als 16785408. Solange Z2M noch nicht nach Updates gesucht hat, steht dort `-1` (`latest_version == null` → `-1`, `lib/extension/homeassistant.ts`; beide gelesen am 2026-11-11, Branch master). Abhilfe: in Z2M „Check for update“ beim Gerät.
+- **Gerätekarte, Feld „Firmware“**: Z2M übernimmt das Basic-Attribut SWBuildID (`0x4000`) als `sw_version` (`homeassistant.ts`). Die Firmware setzt es seit 2026-11-11 auf `<App-Release>.<App-Build>` aus `ZB_OTA_APP_RELEASE`/`ZB_OTA_APP_BUILD`, z. B. „1.0“ (`ZB_SW_BUILD_ID_FORMAT` in [zigbee_config.h](../main/zigbee_config.h)). Z2M liest es beim Interview. Nach einem OTA-Update liest es `swBuildId` neu (`dateCode`/`swBuildId`-Read in `otaUpdate.ts`). Ob HA die Gerätekarte danach ohne Neustart aktualisiert, ist [UNBELEGT].
 
 ### OTA-Datei bauen
 

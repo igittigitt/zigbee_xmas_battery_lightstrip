@@ -20,6 +20,19 @@ const ZCL_ENUM8 = 0x30;
 // Must match main/clusters/battery_runtime_cluster.h
 const RUNTIME_CLUSTER = 'zlBatteryRuntime';
 
+// fromZigbee for uint16 attributes that use 0xFFFF as "unknown" (the ZCL invalid value for uint16).
+// zigbee-herdsman decodes that value as NaN (src/zspec/zcl/utils.ts, ZCL_TYPE_INVALID_BY_TYPE), and
+// the default converter of numeric() then throws "Value is not a number, got number (NaN)"
+// (assertNumber in src/lib/modernExtend.ts). Publish null instead, HA shows "unknown".
+function unknownAsNull(attribute, property, scale = 1) {
+    return (model, msg) => {
+        if (!(attribute in msg.data)) return;
+        const raw = msg.data[attribute];
+        if (typeof raw !== 'number' || Number.isNaN(raw)) return {[property]: null};
+        return {[property]: raw / scale};
+    };
+}
+
 export default {
     zigbeeModel: ['ZL-LightChain'],
     model: 'ZL-LightChain',
@@ -57,9 +70,10 @@ export default {
             label: 'Voltage',
             cluster: RUNTIME_CLUSTER,
             attribute: 'batteryVoltageMv',
-            // 65535 = unknown (not measured, e.g. DEBUG build without ADC)
+            // 0xFFFF = unknown (not measured, e.g. DEBUG build without ADC) -> null
             description: 'Battery voltage, last measurement (with the light on: under load)',
             unit: 'mV',
+            fzConvert: unknownAsNull('batteryVoltageMv', 'voltage'),
             access: 'STATE_GET',
             // change 10 = 10 mV; same timing as battery %
             reporting: {min: '1_HOUR', max: '4_HOURS', change: 10},
@@ -84,6 +98,7 @@ export default {
             unit: 'h',
             scale: 10,
             precision: 1,
+            fzConvert: unknownAsNull('remainingOnTime', 'remaining_light_hours', 10),
             access: 'STATE_GET',
             reporting: {min: '1_HOUR', max: 'MAX', change: 1},
             entityCategory: 'diagnostic',
@@ -93,11 +108,12 @@ export default {
             label: 'Restlaufzeit',
             cluster: RUNTIME_CLUSTER,
             attribute: 'remainingDays',
-            // 6553.5 = unknown (no full day of usage data yet), see docs/known-issues.md
-            description: 'Remaining days at the average daily use of the last 7 days (estimate, 6553.5 = unknown)',
+            // 0xFFFF = unknown (no full day of usage data yet) -> null, see unknownAsNull()
+            description: 'Remaining days at the average daily use of the last 7 days (estimate, empty = no full day of data yet)',
             unit: 'd',
             scale: 10,
             precision: 1,
+            fzConvert: unknownAsNull('remainingDays', 'remaining_days', 10),
             access: 'STATE_GET',
             reporting: {min: '1_HOUR', max: 'MAX', change: 1},
             entityCategory: 'diagnostic',
