@@ -2,7 +2,7 @@ build/
 build_*/
 managed_components/
 sdkconfig
-sdkconrfig.old
+sdkconfig.old
 .DS_Store
 *.o
 *.a
