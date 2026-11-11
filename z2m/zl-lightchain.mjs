@@ -8,10 +8,13 @@
 // (% and voltage, goal Z7) and the remaining time of the consumption model
 // (goal Z14) from the manufacturer-specific cluster 0xFC00.
 
-import {battery, deviceAddCustomCluster, identify, light, numeric} from 'zigbee-herdsman-converters/lib/modernExtend';
+import {battery, deviceAddCustomCluster, enumLookup, identify, light, numeric} from 'zigbee-herdsman-converters/lib/modernExtend';
 
 // ZCL data type "unsigned 16-bit integer" (ZCL spec; esp-zigbee-lib zcl_type.h EZB_ZCL_ATTR_TYPE_UINT16)
 const ZCL_UINT16 = 0x21;
+// ZCL data types "unsigned 8-bit integer" and "8-bit enumeration" (zcl_type.h EZB_ZCL_ATTR_TYPE_UINT8 / _ENUM8)
+const ZCL_UINT8 = 0x20;
+const ZCL_ENUM8 = 0x30;
 
 // Must match main/clusters/battery_runtime_cluster.h
 const RUNTIME_CLUSTER = 'zlBatteryRuntime';
@@ -29,6 +32,9 @@ export default {
                 remainingOnTime: {name: 'remainingOnTime', ID: 0x0000, type: ZCL_UINT16},
                 remainingDays: {name: 'remainingDays', ID: 0x0001, type: ZCL_UINT16},
                 batteryVoltageMv: {name: 'batteryVoltageMv', ID: 0x0002, type: ZCL_UINT16},
+                cellType: {name: 'cellType', ID: 0x0010, type: ZCL_ENUM8},
+                cellCapacity: {name: 'cellCapacity', ID: 0x0011, type: ZCL_UINT16},
+                cellsParallel: {name: 'cellsParallel', ID: 0x0012, type: ZCL_UINT8},
             },
             commands: {},
             commandsResponse: {},
@@ -91,6 +97,48 @@ export default {
             access: 'STATE_GET',
             reporting: {min: '1_HOUR', max: 'MAX', change: 1},
             entityCategory: 'diagnostic',
+        }),
+        // Cell configuration (writable, stored in the device). The firmware couples type and
+        // capacity: selecting the Samsung cell sets 3350 mAh, entering another capacity switches
+        // to "Generisch Li-Ion" (main/clusters/battery_runtime_cluster.h); it reports the result.
+        // Values must match battery_cell_type_t in main/battery/battery_config.h.
+        enumLookup({
+            name: 'battery_cell_type',
+            label: 'Zelltyp',
+            lookup: {'Generisch Li-Ion': 0, 'Samsung INR18650-35E': 1},
+            cluster: RUNTIME_CLUSTER,
+            attribute: 'cellType',
+            description: 'Battery cell type (voltage curve; Samsung INR18650-35E sets 3350 mAh)',
+            access: 'ALL',
+            reporting: {min: 'MIN', max: 'MAX', change: 1},
+            entityCategory: 'config',
+        }),
+        numeric({
+            name: 'battery_cell_capacity',
+            label: 'Kapazität je Zelle',
+            cluster: RUNTIME_CLUSTER,
+            attribute: 'cellCapacity',
+            description: 'Capacity per cell (another value than the datasheet switches to generic Li-ion)',
+            unit: 'mAh',
+            valueMin: 100,
+            valueMax: 20000,
+            valueStep: 50,
+            access: 'ALL',
+            reporting: {min: 'MIN', max: 'MAX', change: 1},
+            entityCategory: 'config',
+        }),
+        numeric({
+            name: 'battery_cells_parallel',
+            label: 'Zellen parallel',
+            cluster: RUNTIME_CLUSTER,
+            attribute: 'cellsParallel',
+            description: 'Number of cells in parallel (1S)',
+            valueMin: 1,
+            valueMax: 8,
+            valueStep: 1,
+            access: 'ALL',
+            reporting: {min: 'MIN', max: 'MAX', change: 1},
+            entityCategory: 'config',
         }),
     ],
 };

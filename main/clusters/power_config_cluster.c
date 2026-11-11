@@ -26,6 +26,8 @@ static const char *TAG = "POWER_CFG_CLUSTER";
 static uint8_t s_percent;           // last state of charge in percent (smoothed), valid if s_percent_valid
 static bool s_percent_valid;
 static uint16_t s_voltage_mv = BATTERY_UNKNOWN_U16;    // last voltage in mV, unknown = none yet
+static bool s_last_at_rest;         // last measurement: light off
+static bool s_last_full_load;       // last measurement: light on at full brightness
 
 static SemaphoreHandle_t s_measure_mutex;
 static StaticSemaphore_t s_measure_mutex_buf;
@@ -86,10 +88,12 @@ static esp_err_t measure(measurement_t *m)
         const uint8_t level = light_get_level();
         m->at_rest = (level == 0);
         m->full_load = (level == LIGHT_LEVEL_MAX);
-        if (m->at_rest) {
-            percent_update(battery_percent_from_mv(m->mv));
-        } else if (m->full_load) {
-            percent_update(battery_percent_from_mv_load(m->mv));
+        s_last_at_rest = m->at_rest;
+        s_last_full_load = m->full_load;
+        if (m->at_rest || m->full_load) {
+            battery_cells_t cells;
+            battery_model_get_cells(&cells);
+            percent_update(battery_percent_from_mv(cells.type, m->mv, m->full_load));
         }
         m->voltage_mv = s_voltage_mv;
         m->percent = s_percent;
@@ -224,6 +228,30 @@ static void initial_values(uint8_t *voltage, uint8_t *percentage)
 uint16_t power_config_cluster_get_voltage_mv(void)
 {
     return s_voltage_mv;
+}
+
+int power_config_cluster_cells_changed(void)
+{
+    if (!s_adc_ready) {
+        return -1;
+    }
+    int soc = -1;
+    xSemaphoreTake(s_measure_mutex, portMAX_DELAY);
+    if (s_voltage_mv != BATTERY_UNKNOWN_U16 && (s_last_at_rest || s_last_full_load)) {
+        battery_cells_t cells;
+        battery_model_get_cells(&cells);
+        // New table: take the value directly, the smoothing would block a rise
+        s_percent = battery_percent_from_mv(cells.type, s_voltage_mv, s_last_full_load);
+        s_percent_valid = true;
+        soc = s_percent;
+    }
+    xSemaphoreGive(s_measure_mutex);
+
+    if (soc >= 0) {
+        set_attr(EZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, zcl_percent((uint8_t)soc));
+        ESP_LOGI(TAG, "Cell configuration changed: state of charge %d %% from %u mV", soc, s_voltage_mv);
+    }
+    return soc;
 }
 
 esp_err_t power_config_cluster_add(ezb_af_ep_desc_t ep_desc)

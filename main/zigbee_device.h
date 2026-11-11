@@ -2,6 +2,7 @@
 #define ZIGBEE_DEVICE_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 
 /**
@@ -46,5 +47,23 @@ void zigbee_device_factory_reset(void);
  * Thread-safe: acquires the Zigbee lock.
  */
 bool zigbee_device_is_joined(void);
+
+/**
+ * @brief Send an attribute of the device endpoint to the coordinator now.
+ *
+ * Report Attributes (ezb_zcl_report_attr_cmd_req) directly to the coordinator
+ * (ZB_COORDINATOR_SHORT_ADDR / ZB_COORDINATOR_ENDPOINT), independent of a
+ * binding. Used after a local change (button, cell configuration), because
+ * ezb_zcl_set_attr_value() alone did not reach Home Assistant (docs/zigbee.md).
+ * A missing reporting entry is logged (zcl_general_cmd.h: the reported
+ * attributes "depend on the reporting configuration").
+ *
+ * Zigbee task or Zigbee lock held.
+ *
+ * @param cluster_id Server cluster on ZB_ENDPOINT
+ * @param attr_id    Attribute (standard manufacturer code)
+ * @return ESP_OK, or ESP_FAIL if the stack rejected the request
+ */
+esp_err_t zigbee_device_report_attr(uint16_t cluster_id, uint16_t attr_id);
 
 #endif // ZIGBEE_DEVICE_H

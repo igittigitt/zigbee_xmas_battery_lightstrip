@@ -15,10 +15,23 @@ typedef struct {
     uint8_t percent;
 } battery_ocv_point_t;
 
-static const battery_ocv_point_t s_ocv_table[] = BATTERY_OCV_TABLE;
-#define OCV_TABLE_LEN   (sizeof(s_ocv_table) / sizeof(s_ocv_table[0]))
-static const battery_ocv_point_t s_load_table[] = BATTERY_LOAD_TABLE;
-#define LOAD_TABLE_LEN  (sizeof(s_load_table) / sizeof(s_load_table[0]))
+static const battery_ocv_point_t s_ocv_generic[] = BATTERY_OCV_TABLE_GENERIC;
+static const battery_ocv_point_t s_load_generic[] = BATTERY_LOAD_TABLE_GENERIC;
+static const battery_ocv_point_t s_ocv_35e[] = BATTERY_OCV_TABLE_35E;
+static const battery_ocv_point_t s_load_35e[] = BATTERY_LOAD_TABLE_35E;
+
+typedef struct {
+    const battery_ocv_point_t *table;
+    size_t len;
+} battery_table_t;
+
+#define TABLE(t)    { .table = (t), .len = sizeof(t) / sizeof((t)[0]) }
+
+/* Indexed by battery_cell_type_t: [type][0] = at rest (OCV), [type][1] = under load. */
+static const battery_table_t s_tables[BATTERY_CELL_TYPE_COUNT][2] = {
+    [BATTERY_CELL_GENERIC_LIION] = { TABLE(s_ocv_generic), TABLE(s_load_generic) },
+    [BATTERY_CELL_SAMSUNG_35E] = { TABLE(s_ocv_35e), TABLE(s_load_35e) },
+};
 
 static adc_unit_t s_unit;
 static adc_channel_t s_channel;
@@ -123,12 +136,11 @@ static uint8_t percent_from_table(const battery_ocv_point_t *table, size_t len, 
     return table[len - 1].percent;
 }
 
-uint8_t battery_percent_from_mv(uint32_t mv)
+uint8_t battery_percent_from_mv(uint8_t cell_type, uint32_t mv, bool under_load)
 {
-    return percent_from_table(s_ocv_table, OCV_TABLE_LEN, mv);
-}
-
-uint8_t battery_percent_from_mv_load(uint32_t mv)
-{
-    return percent_from_table(s_load_table, LOAD_TABLE_LEN, mv);
+    if (cell_type >= BATTERY_CELL_TYPE_COUNT) {
+        cell_type = BATTERY_CELL_GENERIC_LIION;
+    }
+    const battery_table_t *t = &s_tables[cell_type][under_load ? 1 : 0];
+    return percent_from_table(t->table, t->len, mv);
 }

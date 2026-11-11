@@ -7,6 +7,12 @@
  * (BATTERY_MODEL_INTERVAL_MS) books the elapsed time, updates the daily
  * average, saves to NVS and reports. No ADC access here: the voltage
  * measurement (goal Z7) lives in battery.c / power_config_cluster.c.
+ *
+ * The usable charge follows the cell configuration (type, capacity per cell,
+ * parallel cells), which is set from Home Assistant (cluster 0xFC00) and
+ * stored in NVS. Without a stored counter, and after every change of the cell
+ * configuration, the counter starts at the state of charge derived from the
+ * voltage instead of "full".
  */
 #include <assert.h>
 #include "esp_check.h"
@@ -15,6 +21,7 @@
 #include "freertos/FreeRTOS.h"
 #include "nvs.h"
 #include "app_config.h"
+#include "battery.h"
 #include "battery_config.h"
 #include "battery_model.h"
 #include "light.h"
@@ -25,9 +32,6 @@ static const char *TAG = "BATTERY_MODEL";
 #define US_PER_HOUR             (3600ULL * 1000 * 1000)
 #define US_PER_TENTH_HOUR       (US_PER_HOUR / 10)
 
-/** Usable charge in uA*us. */
-#define USABLE_UAUS             ((uint64_t)BATTERY_CAPACITY_MAH * 1000 * US_PER_HOUR * \
-                                 BATTERY_USABLE_PERMILLE / 1000)
 
 /** Model updates per day. */
 #define TICKS_PER_DAY           ((24UL * 3600 * 1000) / BATTERY_MODEL_INTERVAL_MS)
@@ -35,6 +39,9 @@ static_assert(TICKS_PER_DAY >= 1, "BATTERY_MODEL_INTERVAL_MS must not exceed one
 
 #define NVS_KEY_CONSUMED        "consumed"
 #define NVS_KEY_DAY_AVG         "day_avg"
+#define NVS_KEY_CELL_TYPE       "cell_type"
+#define NVS_KEY_CELL_CAP        "cell_cap"
+#define NVS_KEY_CELLS_PAR       "cells_par"
 
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_consumed;         // charge used since the last full battery, uA*us
@@ -42,10 +49,23 @@ static int64_t s_last_us;           // time of the last booking, 0 = not started
 static uint32_t s_load_ua;          // current since s_last_us
 static uint64_t s_day_avg;          // moving average of the daily consumption, uA*us, 0 = unknown
 static uint64_t s_day_start;        // s_consumed at the start of the current day (not persistent)
+static uint64_t s_usable;           // usable charge of the configured cells, uA*us
+static bool s_counter_known;        // false: no stored counter, set from the first voltage at rest
+
+static battery_cells_t s_cells = {
+    .type = BATTERY_CELL_DEFAULT_TYPE,
+    .capacity_mah = BATTERY_CAPACITY_35E_MAH,
+    .parallel = BATTERY_CELLS_PARALLEL_DEFAULT,
+};
 
 static uint32_t s_ticks;            // updates since boot (esp_timer task only)
 static esp_timer_handle_t s_timer;
 static battery_model_cb_t s_cb;
+
+static uint64_t usable_uaus(const battery_cells_t *cells)
+{
+    return (uint64_t)cells->capacity_mah * cells->parallel * 1000 * US_PER_HOUR * BATTERY_USABLE_PERMILLE / 1000;
+}
 
 static uint32_t load_ua(uint8_t level)
 {
@@ -82,14 +102,37 @@ void battery_model_get(battery_runtime_t *runtime)
     book_locked(now);
     const uint64_t consumed = s_consumed;
     const uint64_t day_avg = s_day_avg;
+    const uint64_t usable = s_usable;
     portEXIT_CRITICAL(&s_lock);
 
-    const uint64_t remaining = consumed < USABLE_UAUS ? USABLE_UAUS - consumed : 0;
+    const uint64_t remaining = consumed < usable ? usable - consumed : 0;
 
     // Light-on time at the level used for "on" (dimming), idle current included
     runtime->on_time_x10h = clamp_u16(remaining / load_ua(light_get_on_level()) / US_PER_TENTH_HOUR);
     runtime->days_x10 = day_avg ? clamp_u16(remaining * 10 / day_avg) : BATTERY_UNKNOWN_U16;
-    runtime->percent = (uint8_t)(remaining * 100 / USABLE_UAUS);
+    runtime->percent = usable ? (uint8_t)(remaining * 100 / usable) : 0;
+}
+
+static void nvs_save_cells(const battery_cells_t *cells)
+{
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open(BATTERY_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(nvs, NVS_KEY_CELL_TYPE, cells->type);
+        if (err == ESP_OK) {
+            err = nvs_set_u16(nvs, NVS_KEY_CELL_CAP, cells->capacity_mah);
+        }
+        if (err == ESP_OK) {
+            err = nvs_set_u8(nvs, NVS_KEY_CELLS_PAR, cells->parallel);
+        }
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs);
+        }
+        nvs_close(nvs);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Saving cell configuration failed: %s", esp_err_to_name(err));
+    }
 }
 
 static void nvs_save(void)
@@ -129,7 +172,23 @@ static bool nvs_load(void)
     if (nvs_get_u64(nvs, NVS_KEY_DAY_AVG, &day_avg) != ESP_OK) {
         day_avg = 0;    // not stored yet: unknown
     }
+    // Cell configuration: keep the defaults for missing or invalid entries
+    battery_cells_t cells = s_cells;
+    if (nvs_get_u8(nvs, NVS_KEY_CELL_TYPE, &cells.type) != ESP_OK) {
+        cells.type = s_cells.type;
+    }
+    if (nvs_get_u16(nvs, NVS_KEY_CELL_CAP, &cells.capacity_mah) != ESP_OK) {
+        cells.capacity_mah = s_cells.capacity_mah;
+    }
+    if (nvs_get_u8(nvs, NVS_KEY_CELLS_PAR, &cells.parallel) != ESP_OK) {
+        cells.parallel = s_cells.parallel;
+    }
     nvs_close(nvs);
+    if (battery_model_cells_valid(&cells)) {
+        s_cells = cells;
+    } else {
+        ESP_LOGW(TAG, "Stored cell configuration invalid, using the default");
+    }
 
     s_consumed = consumed;
     s_day_avg = day_avg;
@@ -168,28 +227,90 @@ static void model_timer_cb(void *arg)
     }
 }
 
-void battery_model_boot_voltage(uint32_t mv)
+/** Set the counter so the model shows the given state of charge, and save it. */
+static void set_percent(uint8_t percent)
 {
-    if (mv < BATTERY_FULL_MV) {
-        return;
+    if (percent > 100) {
+        percent = 100;
     }
     portENTER_CRITICAL(&s_lock);
-    s_consumed = 0;
-    s_day_start = 0;
+    book_locked(esp_timer_get_time());
+    s_consumed = s_usable * (100 - percent) / 100;
+    s_day_start = s_consumed;
+    s_counter_known = true;
     portEXIT_CRITICAL(&s_lock);
     nvs_save();
-    ESP_LOGI(TAG, "Battery full (%lu mV), consumption counter reset", (unsigned long)mv);
+}
+
+void battery_model_boot_voltage(uint32_t mv)
+{
+    if (mv >= BATTERY_FULL_MV) {
+        set_percent(100);
+        ESP_LOGI(TAG, "Battery full (%lu mV), consumption counter reset", (unsigned long)mv);
+    } else if (!s_counter_known) {
+        const uint8_t percent = battery_percent_from_mv(s_cells.type, mv, false);
+        set_percent(percent);
+        ESP_LOGI(TAG, "No stored counter: starting at %u %% from %lu mV", percent, (unsigned long)mv);
+    }
+}
+
+bool battery_model_cells_valid(const battery_cells_t *cells)
+{
+    return cells->type < BATTERY_CELL_TYPE_COUNT &&
+           cells->capacity_mah >= BATTERY_CELL_CAPACITY_MIN_MAH &&
+           cells->capacity_mah <= BATTERY_CELL_CAPACITY_MAX_MAH &&
+           cells->parallel >= BATTERY_CELLS_PARALLEL_MIN &&
+           cells->parallel <= BATTERY_CELLS_PARALLEL_MAX;
+}
+
+void battery_model_get_cells(battery_cells_t *cells)
+{
+    portENTER_CRITICAL(&s_lock);
+    *cells = s_cells;
+    portEXIT_CRITICAL(&s_lock);
+}
+
+esp_err_t battery_model_set_cells(const battery_cells_t *cells, int soc_percent)
+{
+    ESP_RETURN_ON_FALSE(battery_model_cells_valid(cells), ESP_ERR_INVALID_ARG, TAG, "Invalid cell configuration");
+
+    portENTER_CRITICAL(&s_lock);
+    book_locked(esp_timer_get_time());
+    const uint64_t old_usable = s_usable;
+    const uint64_t new_usable = usable_uaus(cells);
+    s_cells = *cells;
+    s_usable = new_usable;
+    if (soc_percent < 0 && old_usable) {
+        // State of charge unknown: keep the remaining share of the old configuration
+        const uint64_t consumed = s_consumed < old_usable ? s_consumed : old_usable;
+        s_consumed = (uint64_t)((double)consumed * (double)new_usable / (double)old_usable);
+        s_day_start = s_consumed;
+    }
+    portEXIT_CRITICAL(&s_lock);
+
+    nvs_save_cells(cells);
+    if (soc_percent >= 0) {
+        set_percent((uint8_t)soc_percent);
+    } else {
+        nvs_save();
+    }
+    ESP_LOGI(TAG, "Cells: type %u, %u mAh x %u%s", cells->type, cells->capacity_mah, cells->parallel,
+             soc_percent >= 0 ? ", counter set from the voltage" : ", remaining share kept");
+    return ESP_OK;
 }
 
 esp_err_t battery_model_init(battery_model_cb_t cb)
 {
     s_cb = cb;
-    if (!nvs_load()) {
+    s_counter_known = nvs_load();
+    s_usable = usable_uaus(&s_cells);
+    if (!s_counter_known) {
         if (!APP_BATTERY_ADC) {
-            s_consumed = USABLE_UAUS * (100 - APP_DEBUG_BATTERY_PERCENT) / 100;
+            s_consumed = s_usable * (100 - APP_DEBUG_BATTERY_PERCENT) / 100;
+            s_counter_known = true;
             ESP_LOGW(TAG, "DEBUG: model starts at the emulated level %d %%", APP_DEBUG_BATTERY_PERCENT);
         } else {
-            ESP_LOGW(TAG, "No stored counter: assuming a full battery");
+            ESP_LOGW(TAG, "No stored counter: set from the first voltage at rest");
         }
     }
 

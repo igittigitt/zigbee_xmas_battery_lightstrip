@@ -147,7 +147,7 @@ Begründung: Der ESP32-H2 läuft ab 3,0 V, und unterhalb ~3,3 V Akkuspannung gre
   - **Spannungen:** Ladespannung 4,2 V, Nennspannung 3,60 V, Entladeschluss 2,65 V (Abschnitte 3.2, 3.3 und 3.9).
   - **Innenwiderstand:** 35 mΩ, gemessen mit AC 1 kHz nach dem Laden (Abschnitt 7.4). Der Gleichstrom-Innenwiderstand unter Dauerlast ist nicht angegeben.
   - **Auslieferung:** mit 30 % Ladung (Abschnitt 3.13, Note 1), in einem Spannungsbereich von 3,49–3,69 V (Abschnitt 7.11).
-  - **Keine Entladekurve im Datenblatt.** Die Tabellen `BATTERY_OCV_TABLE` und `BATTERY_LOAD_TABLE` müssen deshalb aus einer eigenen Messung kommen.
+  - **Keine Entladekurve im Datenblatt.** Die Tabellen `BATTERY_OCV_TABLE_35E` und `BATTERY_LOAD_TABLE_35E` müssen deshalb aus einer eigenen Messung kommen.
 - Ob ein Buck-Boost die Restkapazität sinnvoll nutzbar machen würde, hängt von dieser Restkapazität und dem Ruhestrom des Wandlers ab – [OFFEN]. Abschaltschwelle Z8 vorläufig ca. 3,2–3,3 V Ruhespannung (Hysterese, Messung bei LED aus), Festlegung nach Klärung.
 - ⚠️ **5V-Pin = VBUS** (direkt verbunden, siehe Schaltplan). Bei gestecktem USB und angeschlossenem Akku speist USB mit 5 V in den Akku zurück. Vor dem Flashen Akku abklemmen oder eine Schottky-/Ideal-Diode in die Akkuleitung setzen (kostet ~0,2–0,3 V Reserve).
 - **Versorgungspfad niederohmig verdrahten:** Der ESP32-H2 zieht beim Funk-Start kurze Spitzen von ≈ 100–180 mA (PPK2-Messung S10, [power-measurement.md](power-measurement.md#ablauf-s10-reboot-schleife)). Über ein billiges Steckbrett führte das unterhalb von 4,0 V zu einer Reboot-Schleife. Akku und 5V-Pin deshalb kurz und gelötet verbinden.
@@ -239,8 +239,8 @@ Umgesetzt am 2026-11-08 in [battery.c](../main/battery/battery.c) (Messung) und 
 beim Start (LED noch aus) und alle BATTERY_MEASURE_INTERVAL_MS = 15 min:
   ADC-Unit anlegen → 16 Samples, eFuse-kalibriert (Curve Fitting) → Mittelwert → Unit löschen
   × Teilerverhältnis (R_TOP + R_BOTTOM) / R_BOTTOM × BATTERY_CAL_PERMILLE / 1000  → Akkuspannung mV
-  LED aus → Ladestand aus BATTERY_OCV_TABLE, geglättet (nur fallend, Anstieg erst ab +5 %)
-  LED voll an → Ladestand aus BATTERY_LOAD_TABLE (Spannung unter Last), gleiche Glättung
+  LED aus → Ladestand aus BATTERY_OCV_TABLE_<Zelltyp>, geglättet (nur fallend, Anstieg erst ab +5 %)
+  LED voll an → Ladestand aus BATTERY_LOAD_TABLE_<Zelltyp> (Spannung unter Last), gleiche Glättung
   LED gedimmt / Rampe → nur Spannung, Ladestand bleibt
   → BatteryVoltage (100 mV) und BatteryPercentageRemaining (0,5 %)
 ```

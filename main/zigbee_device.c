@@ -461,3 +461,29 @@ bool zigbee_device_is_joined(void)
     esp_zigbee_lock_release();
     return joined;
 }
+
+esp_err_t zigbee_device_report_attr(uint16_t cluster_id, uint16_t attr_id)
+{
+    if (ezb_zcl_reporting_info_find(ZB_ENDPOINT, cluster_id, EZB_ZCL_CLUSTER_SERVER, attr_id, EZB_ZCL_STD_MANUF_CODE)
+        == EZB_ZCL_INVALID_REPORTING_INFO) {
+        ESP_LOGW(TAG, "No reporting entry for 0x%04x/0x%04x, report may not be sent", cluster_id, attr_id);
+    }
+
+    ezb_zcl_report_attr_cmd_t cmd = {
+        .cmd_ctrl = {
+            .dst_addr = EZB_ADDRESS_SHORT(ZB_COORDINATOR_SHORT_ADDR),
+            .dst_ep = ZB_COORDINATOR_ENDPOINT,
+            .src_ep = ZB_ENDPOINT,
+            .cluster_id = cluster_id,
+            .manuf_code = EZB_ZCL_STD_MANUF_CODE,
+            .fc.direction = EZB_ZCL_CMD_DIRECTION_TO_CLI,
+        },
+        .payload.attr_id = attr_id,
+    };
+    ezb_err_t err = ezb_zcl_report_attr_cmd_req(&cmd);
+    if (err != EZB_ERR_NONE) {
+        ESP_LOGE(TAG, "Report 0x%04x/0x%04x failed: 0x%04x", cluster_id, attr_id, (unsigned)err);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}

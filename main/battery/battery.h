@@ -1,6 +1,7 @@
 #ifndef BATTERY_H
 #define BATTERY_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -34,25 +35,18 @@ esp_err_t battery_init(void);
 esp_err_t battery_measure_mv(uint32_t *mv);
 
 /**
- * @brief Estimate the state of charge from an open circuit voltage.
+ * @brief Estimate the state of charge from a battery voltage.
  *
- * Piecewise linear interpolation in BATTERY_OCV_TABLE (battery_config.h),
- * clamped to 0..100. Only meaningful for a voltage measured at rest (LED off).
+ * Piecewise linear interpolation in the table of the cell type
+ * (battery_config.h, BATTERY_OCV_TABLE_x at rest, BATTERY_LOAD_TABLE_x with
+ * the light on at full brightness), clamped to 0..100.
  *
- * @param mv Battery voltage in mV
+ * @param cell_type  battery_cell_type_t (unknown values: generic Li-ion)
+ * @param mv         Battery voltage in mV
+ * @param under_load true: measured with the light on at full brightness;
+ *                   false: measured at rest (light off)
  * @return State of charge in percent, 0..100
  */
-uint8_t battery_percent_from_mv(uint32_t mv);
-
-/**
- * @brief Estimate the state of charge from a voltage measured under load.
- *
- * Like battery_percent_from_mv(), but with BATTERY_LOAD_TABLE, which applies
- * to the light on at full brightness (LIGHT_LEVEL_MAX).
- *
- * @param mv Battery voltage in mV, measured with the light on at full brightness
- * @return State of charge in percent, 0..100
- */
-uint8_t battery_percent_from_mv_load(uint32_t mv);
+uint8_t battery_percent_from_mv(uint8_t cell_type, uint32_t mv, bool under_load);
 
 #endif // BATTERY_H

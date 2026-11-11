@@ -68,4 +68,19 @@ esp_err_t power_config_cluster_refresh(void);
  */
 uint16_t power_config_cluster_get_voltage_mv(void);
 
+/**
+ * @brief Recompute the state of charge after a change of the cell configuration.
+ *
+ * Uses the last measured voltage and the table of the new cell type
+ * (battery_model_get_cells(), so call after battery_model_set_cells()),
+ * bypasses the smoothing and writes BatteryPercentageRemaining. Without a
+ * usable last measurement (none yet, or the light was dimmed / ramping) the
+ * state of charge stays and -1 is returned.
+ *
+ * Zigbee task or Zigbee lock held.
+ *
+ * @return New state of charge in percent, or -1 if unknown
+ */
+int power_config_cluster_cells_changed(void);
+
 #endif // POWER_CONFIG_CLUSTER_H

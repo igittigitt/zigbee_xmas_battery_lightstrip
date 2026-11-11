@@ -40,8 +40,8 @@ Es gibt keine Unit-Tests. Verifikation = erfolgreicher `idf.py build` ohne neue 
 | `main/clusters/cluster_manager.c` | Baut Endpoint aus ZHA-Vorlage „Dimmable Light“ + Zusatzcluster und registriert ihn |
 | `main/clusters/*_cluster.c` | Je ein ZCL-Cluster (`on_off` ↔ Licht, `level` ↔ Helligkeit, `identify`, `power_config` Akku) |
 | `main/battery/battery_guard.c` | Tiefentladeschutz (Z8): < 3,3 V Warnblinken bei jeder Messung, < 3,0 V Signal „Akku leer“ (3 Blitze + Ausklingen) + Deep Sleep (Wecken Taster/6 h, weiter ab 3,6 V; Signal auch bei Tasterweckung, nicht bei Timer); Startprüfung vor dem Zigbee-Start. Aktiv in Level 0 und 3 (`APP_BATTERY_GUARD`) |
-| `main/battery/battery_model.c` | Verbrauchsmodell für die Restlaufzeit (Z14): Zählung bei jeder Pegeländerung (`battery_model_set_load` aus `light.c`), stündlicher Timer, Zähler im NVS. Ströme in `battery_config.h` sind Platzhalter |
-| `main/clusters/battery_runtime_cluster.c` | Herstellerspezifischer Cluster `0xFC00` (RemainingOnTime, RemainingDays) |
+| `main/battery/battery_model.c` | Verbrauchsmodell für die Restlaufzeit (Z14): Zählung bei jeder Pegeländerung (`battery_model_set_load` aus `light.c`), stündlicher Timer, Zähler im NVS. Ströme in `battery_config.h` sind Platzhalter. Zellkonfiguration (Z15) im NVS; ohne Zähler bzw. nach Änderung Start beim Ladestand aus der Spannung |
+| `main/clusters/battery_runtime_cluster.c` | Herstellerspezifischer Cluster `0xFC00` (RemainingOnTime, RemainingDays, BatteryVoltageMv; beschreibbar: CellType, CellCapacity, CellsParallel = Z15, Kopplung Typ↔Kapazität in `write_attr_cb`) |
 | `z2m/zl-lightchain.mjs` | Zigbee2MQTT External Converter (nötig, damit die Restlaufzeit in HA erscheint) |
 | `main/battery/battery.c` | Akkuspannung per ADC (Unit nur während der Messung, wegen Sleep-Power-Domänen), Ruhespannung → %; Konstanten in `battery_config.h` |
 | `main/handlers/attribute_handler.c` | Routet eingehende ZCL-Aktionen nach Cluster-ID |

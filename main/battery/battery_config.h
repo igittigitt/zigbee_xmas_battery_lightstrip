@@ -67,42 +67,61 @@
  */
 #define BATTERY_PERCENT_RISE_MIN        5
 
-/**
- * Open circuit voltage -> state of charge, piecewise linear, ascending by mV.
+/* ---- Cell type (selectable in Home Assistant, cluster 0xFC00) ----
  *
- * [UNBELEGT] Placeholder: linear between the emergency shutdown threshold
- * (BATTERY_SHUTDOWN_MV = 3000 mV, goal Z8: 0 % = the light goes off; agreed
- * with the user on 2026-11-10) and a full Li-ion cell (4200 mV, end-of-charge
- * voltage of the charger). The real
- * curve of a Li-ion cell is flat in the middle (docs/hardware.md, TI SLUAAR3
- * Fig. 2-1), so this table over- or underestimates in the middle range.
- * Replace with points from the discharge curve of the cell actually used
- * (cell datasheet or own measurement); more rows can simply be added.
+ * Each cell type has its own voltage tables (rest and load). Only cell types
+ * with real data belong here. Values of the enum are stored in NVS and sent
+ * over Zigbee (attribute CellType): never renumber, only append.
  */
-#define BATTERY_OCV_TABLE                                   \
-    {                                                       \
-        { .mv = 3000, .percent = 0 },                       \
-        { .mv = 4200, .percent = 100 },                     \
-    }
+typedef enum {
+    BATTERY_CELL_GENERIC_LIION = 0,     /**< Any Li-ion cell, 4.2 V end-of-charge, capacity entered by the user */
+    BATTERY_CELL_SAMSUNG_35E = 1,       /**< Samsung INR18650-35E */
+    BATTERY_CELL_TYPE_COUNT
+} battery_cell_type_t;
+
+/** Cell type, capacity and parallel cells without stored setting (the prototype). */
+#define BATTERY_CELL_DEFAULT_TYPE       BATTERY_CELL_SAMSUNG_35E
+#define BATTERY_CELLS_PARALLEL_DEFAULT  1
 
 /**
- * Battery voltage under load (light on at full brightness, LIGHT_LEVEL_MAX)
- * -> state of charge, piecewise linear, ascending by mV. Used so the state of
- * charge keeps falling while the light is on (a cell that drops quickly during
- * a long on-phase would otherwise keep its last value from the rest phase).
- *
- * [UNBELEGT] Placeholder: same points as BATTERY_OCV_TABLE. The voltage under
- * load is lower than at rest, so this placeholder reads too low (pessimistic,
- * the safe direction). Replace with the own discharge measurement (full cell,
- * light permanently on at 100 %, log every measurement until the shutdown).
- * The Samsung INR18650-35E datasheet (datasheets/INR18650-35E.pdf, Ver. 1.1)
- * contains no discharge curve.
+ * Capacity of the Samsung INR18650-35E in mAh: "Standard Discharge Capacity
+ * 3,350mAh" (minimum; 0.2C = 680 mA to 2.65 V at 23 °C, datasheet
+ * datasheets/INR18650-35E.pdf Ver. 1.1, 3.1 / 7.2).
  */
-#define BATTERY_LOAD_TABLE                                  \
-    {                                                       \
-        { .mv = 3000, .percent = 0 },                       \
-        { .mv = 4200, .percent = 100 },                     \
-    }
+#define BATTERY_CAPACITY_35E_MAH        3350
+
+/** Allowed range of the capacity per cell (CellCapacity attribute), own choice. */
+#define BATTERY_CELL_CAPACITY_MIN_MAH   100
+#define BATTERY_CELL_CAPACITY_MAX_MAH   20000
+
+/** Allowed range of the number of parallel cells (CellsParallel attribute), own choice. */
+#define BATTERY_CELLS_PARALLEL_MIN      1
+#define BATTERY_CELLS_PARALLEL_MAX      8
+
+/*
+ * Voltage -> state of charge per cell type, piecewise linear, ascending by mV;
+ * more rows can simply be added. OCV = at rest (light off), LOAD = light on at
+ * full brightness (LIGHT_LEVEL_MAX). Parallel cells of one type share the
+ * voltage, the tables apply per cell.
+ *
+ * Generic Li-ion: [UNBELEGT] linear between the emergency shutdown threshold
+ * (BATTERY_SHUTDOWN_MV = 3000 mV, goal Z8: 0 % = the light goes off; agreed
+ * with the user on 2026-11-10) and a full cell (4200 mV, end-of-charge
+ * voltage). The real curve of a Li-ion cell is flat in the middle
+ * (docs/hardware.md, TI SLUAAR3 Fig. 2-1), so it over- or underestimates in
+ * the middle range. The load table equals the OCV table: under load the
+ * voltage reads lower, i.e. the percentage too low (the safe direction).
+ *
+ * Samsung INR18650-35E: [UNBELEGT] placeholder = generic table. The datasheet
+ * (datasheets/INR18650-35E.pdf, Ver. 1.1) contains no discharge curve. Replace
+ * with the own discharge measurement (full cell, light permanently on at
+ * 100 %, log every measurement until the shutdown; rest phases for the OCV).
+ */
+#define BATTERY_OCV_TABLE_GENERIC                               {                                                               { .mv = 3000, .percent = 0 },                               { .mv = 4200, .percent = 100 },                         }
+#define BATTERY_LOAD_TABLE_GENERIC      BATTERY_OCV_TABLE_GENERIC
+
+#define BATTERY_OCV_TABLE_35E           BATTERY_OCV_TABLE_GENERIC
+#define BATTERY_LOAD_TABLE_35E          BATTERY_OCV_TABLE_GENERIC
 
 /* ---- Deep discharge protection (goal Z8), battery_guard.c ----
  *
@@ -165,12 +184,7 @@
  * these values.
  */
 
-/**
- * Capacity in mAh. Cell used: Samsung INR18650-35E, "Standard Discharge
- * Capacity 3,350mAh" (minimum; 0.2C = 680 mA to 2.65 V at 23 °C, datasheet
- * datasheets/INR18650-35E.pdf Ver. 1.1, 3.1 / 7.2).
- */
-#define BATTERY_CAPACITY_MAH            3350
+/* Capacity: cell type, capacity per cell and parallel cells above (set in HA). */
 
 /**
  * Usable share of the capacity until the cut-off threshold (goal Z8), in per

@@ -1,6 +1,7 @@
 #ifndef BATTERY_MODEL_H
 #define BATTERY_MODEL_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -17,6 +18,15 @@ typedef struct {
     uint8_t percent;            /**< Remaining usable charge of the model in % (log only; the
                                      reported BatteryPercentageRemaining comes from the voltage, Z7) */
 } battery_runtime_t;
+
+/**
+ * @brief Cell configuration (set in Home Assistant, stored in NVS).
+ */
+typedef struct {
+    uint8_t type;           /**< battery_cell_type_t (battery_config.h) */
+    uint16_t capacity_mah;  /**< Capacity per cell in mAh */
+    uint8_t parallel;       /**< Number of parallel cells (1S nP) */
+} battery_cells_t;
 
 /**
  * @brief Callback for a new model state (esp_timer task context).
@@ -44,6 +54,8 @@ esp_err_t battery_model_init(battery_model_cb_t cb);
  *
  * A battery change always means a reboot. If mv >= BATTERY_FULL_MV the cell
  * counts as freshly charged and the consumption counter is reset (and saved).
+ * Without a stored counter the counter starts at the state of charge of this
+ * voltage (table of the configured cell type).
  *
  * @param mv Battery voltage in mV, measured with the light off
  */
@@ -65,5 +77,32 @@ void battery_model_set_load(uint8_t level);
  * @param[out] runtime Remaining time in ZCL units
  */
 void battery_model_get(battery_runtime_t *runtime);
+
+/**
+ * @brief Check a cell configuration against the allowed ranges (battery_config.h).
+ *
+ * @param cells Cell configuration
+ * @return true if valid
+ */
+bool battery_model_cells_valid(const battery_cells_t *cells);
+
+/**
+ * @brief Current cell configuration (loaded from NVS by battery_model_init()).
+ *
+ * @param[out] cells Cell configuration
+ */
+void battery_model_get_cells(battery_cells_t *cells);
+
+/**
+ * @brief Change the cell configuration, save it and adapt the counter.
+ *
+ * Blocks for the NVS write (a few ms).
+ *
+ * @param cells       New cell configuration (must pass battery_model_cells_valid())
+ * @param soc_percent State of charge from the voltage (0..100): the counter is
+ *                    set to it; -1 = unknown: the remaining share is kept
+ * @return ESP_OK, ESP_ERR_INVALID_ARG for an invalid configuration
+ */
+esp_err_t battery_model_set_cells(const battery_cells_t *cells, int soc_percent);
 
 #endif // BATTERY_MODEL_H
