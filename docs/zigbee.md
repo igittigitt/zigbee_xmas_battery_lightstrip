@@ -21,7 +21,7 @@ Endpoint `ZB_ENDPOINT` = **1**, Profil Home Automation (`0x0104`), **Device ID `
 
 | Cluster | ID | Herkunft | Inhalt / Verhalten |
 |---|---|---|---|
-| Basic | `0x0000` | ZHA-Vorlage | ManufacturerName `zigbee-light`, ModelIdentifier `ZL-LightChain` (`ZB_MANUFACTURER_NAME`/`ZB_MODEL_IDENTIFIER`), SWBuildID z. B. `1.0` (aus `ZB_OTA_APP_RELEASE`/`_BUILD`), PowerSource = `0x03` Battery |
+| Basic | `0x0000` | ZHA-Vorlage | ManufacturerName `zigbee-light`, ModelIdentifier `ZL-LightChain` (`ZB_MANUFACTURER_NAME`/`ZB_MODEL_IDENTIFIER`), SWBuildID z. B. `1.0.0` (aus `ZB_OTA_APP_RELEASE`/`_BUILD`), DateCode = Build-Datum `YYYYMMDD`, PowerSource = `0x03` Battery |
 | Identify | `0x0003` | ZHA-Vorlage | Identify → Lichterkette blinkt `ZB_IDENTIFY_DURATION_MS` (2 s) mit `ZB_IDENTIFY_BLINK_HZ` (5 Hz), danach vorheriger Zustand (Z11), [identify_cluster.c](../main/clusters/identify_cluster.c) |
 | Groups | `0x0004` | ZHA-Vorlage | Verwaltet der Stack |
 | Scenes | `0x0005` | ZHA-Vorlage | Verwaltet der Stack |
@@ -146,7 +146,7 @@ Schritt-für-Schritt-Anleitung für Anwender: [README.md](../README.md#einrichtu
 Grundlage der Converter-Funktionen ist `src/lib/modernExtend.ts` von zigbee-herdsman-converters (Branch master, gelesen am 2026-11-08). Daraus belegt sind `deviceAddCustomCluster`, die Optionen von `battery()`, `light()` und `identify()` sowie das Format von `reporting` (`min`/`max`/`change`, Zeitangaben wie `"1_HOUR"`). Nur aus einer Zusammenfassung des Quelltexts stammen und sind deshalb **[UNBELEGT]**:
 - die Feldnamen `cluster`/`attribute` von `numeric()` (Laden und Exposes am 2026-11-08 bestätigt, Werte noch nicht),
 - dass `scale: 10` den Rohwert durch 10 teilt,
-- ~~dass `numeric()` den Wert `0xFFFF` nicht ausfiltert~~ Widerlegt (2026-11-11, Z2M-Log `Exception while calling fromZigbee converter: Value is not a number, got number (NaN)`, `remaining_days` fehlte im Payload). zigbee-herdsman dekodiert den ZCL-Ungültigwert eines uint16 (`0xFFFF`) als `NaN` (`src/zspec/zcl/utils.ts`, `ZCL_TYPE_INVALID_BY_TYPE`, Branch master, gelesen am 2026-11-11). Der Standard-Converter von `numeric()` wirft dann in `assertNumber` (`src/lib/modernExtend.ts`). Deshalb haben `voltage`, `remaining_light_hours` und `remaining_days` im Converter ein eigenes `fzConvert` (`unknownAsNull`), das `NaN` als `null` meldet. HA zeigt dann „unbekannt“. Die Wirkung ist am Gerät noch nicht geprüft.
+- ~~dass `numeric()` den Wert `0xFFFF` nicht ausfiltert~~ Widerlegt (2026-11-11, Z2M-Log `Exception while calling fromZigbee converter: Value is not a number, got number (NaN)`, `remaining_days` fehlte im Payload). zigbee-herdsman dekodiert den ZCL-Ungültigwert eines uint16 (`0xFFFF`) als `NaN` (`src/zspec/zcl/utils.ts`, `ZCL_TYPE_INVALID_BY_TYPE`, Branch master, gelesen am 2026-11-11). Der Standard-Converter von `numeric()` wirft dann in `assertNumber` (`src/lib/modernExtend.ts`). Deshalb haben `voltage`, `remaining_light_hours` und `remaining_days` im Converter ein eigenes `fzConvert` (`unknownAsNull`), das `NaN` als `null` meldet. HA zeigt dann „unbekannt“. Am Gerät bestätigt (2026-11-11): Payload `"remaining_days": null`, keine Exception mehr.
 
 Prüfen, wenn das Gerät gepairt ist.
 
@@ -199,8 +199,8 @@ Nach dem Update gilt `StartUpOnOff` (Z6): Mit dem Default „aus“ ist ein vorh
 
 ### Versionsnummer in HA
 
-- **Entität „Firmware“** (Abschnitt *Konfiguration* auf der Geräteseite): „Installierte Version“ und „Neueste Version“ sind `update.installed_version`/`latest_version` aus dem Z2M-Status. Das ist die 32-Bit-`fileVersion` als **Dezimalzahl** (`installed_version: state.current.fileVersion`, zigbee2mqtt `lib/extension/otaUpdate.ts`). Beispiel: `0x01002000` erscheint als 16785408. Solange Z2M noch nicht nach Updates gesucht hat, steht dort `-1` (`latest_version == null` → `-1`, `lib/extension/homeassistant.ts`; beide gelesen am 2026-11-11, Branch master). Abhilfe: in Z2M „Check for update“ beim Gerät.
-- **Gerätekarte, Feld „Firmware“**: Z2M übernimmt das Basic-Attribut SWBuildID (`0x4000`) als `sw_version` (`homeassistant.ts`). Die Firmware setzt es seit 2026-11-11 auf `<App-Release>.<App-Build>` aus `ZB_OTA_APP_RELEASE`/`ZB_OTA_APP_BUILD`, z. B. „1.0“ (`ZB_SW_BUILD_ID_FORMAT` in [zigbee_config.h](../main/zigbee_config.h)). Z2M liest es beim Interview. Nach einem OTA-Update liest es `swBuildId` neu (`dateCode`/`swBuildId`-Read in `otaUpdate.ts`). Ob HA die Gerätekarte danach ohne Neustart aktualisiert, ist [UNBELEGT].
+- **Entität „Firmware“** (Abschnitt *Konfiguration* auf der Geräteseite): „Installierte Version“ und „Neueste Version“ sind `update.installed_version`/`latest_version` aus dem Z2M-Status. Das ist die 32-Bit-`fileVersion` als **Dezimalzahl** (`installed_version: state.current.fileVersion`, zigbee2mqtt `lib/extension/otaUpdate.ts`). Beispiel: `0x10002000` (aktueller Stand) erscheint als 268443648. Die Z2M-Oberfläche (Seite *OTA*) zerlegt die Zahl dagegen: Release-Byte als `Nibble.Nibble`, Build dezimal, also „App: 1.0 build 0, Stack: 2.0 build 0“ (`formatOtaFileVersion` in zigbee2mqtt-windfront `src/components/ota-page/index.ts`, gelesen am 2026-11-11). Deshalb ist `ZB_OTA_APP_RELEASE` `0x10` für Version 1.0. Solange Z2M noch nicht nach Updates gesucht hat, steht dort `-1` (`latest_version == null` → `-1`, `lib/extension/homeassistant.ts`; beide gelesen am 2026-11-11, Branch master). Abhilfe: in Z2M „Check for update“ beim Gerät.
+- **Gerätekarte, Feld „Firmware“**: Z2M übernimmt das Basic-Attribut SWBuildID (`0x4000`) als `sw_version` (`homeassistant.ts`). Die Firmware setzt es seit 2026-11-11 auf `<Major>.<Minor>.<Build>` aus den Nibbles von `ZB_OTA_APP_RELEASE` und `ZB_OTA_APP_BUILD`, z. B. „1.0.0“ (`ZB_SW_BUILD_ID_FORMAT` in [zigbee_config.h](../main/zigbee_config.h)), passend zu „App: 1.0 build 0“. DateCode (`0x0006`, auf der Z2M-OTA-Seite unter der Firmware-ID) ist das Build-Datum `YYYYMMDD` aus `esp_app_get_description()->date`. Das ist das `__DATE__` beim Übersetzen von `esp_app_desc.c` (ESP-IDF `components/esp_app_format`). Ich glaube es könnte so sein: Bei einem inkrementellen Build ohne Änderung an dieser Datei bleibt das Datum alt. Für OTA-Releases deshalb frisch bauen (`fullclean`). Z2M liest es beim Interview. Nach einem OTA-Update liest es `swBuildId` neu (`dateCode`/`swBuildId`-Read in `otaUpdate.ts`). Ob HA die Gerätekarte danach ohne Neustart aktualisiert, ist [UNBELEGT].
 
 ### OTA-Datei bauen
 
@@ -209,10 +209,10 @@ Nach dem Update gilt `StartUpOnOff` (Z6): Mit dem Default „aus“ ist ein vorh
 3. Die Zigbee-OTA-Datei erzeugen mit `tools/image_builder_tool/image_builder_tool.py` aus [esp-zigbee-sdk @ e2fdf4ad](https://github.com/espressif/esp-zigbee-sdk/tree/e2fdf4ad/tools/image_builder_tool) (Python-Script, nicht Teil der Komponente):
 
    ```powershell
-   python image_builder_tool.py -m 0x131B -i 0x5A4C -v 0x01012000 --tag 0x0000 build_release/zigbee_node.bin
+   python image_builder_tool.py -m 0x131B -i 0x5A4C -v 0x10012000 --tag 0x0000 build_release/zigbee_node.bin
    ```
 
-   `-v` = neue `ZB_OTA_FILE_VERSION` (Beispiel: App 1, Build 1, Stack 0x20/0x00). `--tag` erwartet Tag-ID und Datei **durch Leerzeichen getrennt**, so steht es im argparse des Scripts. Die SDK-Doku `zcl_ota_upgrade.rst` zeigt `0x0000:datei`; das passt nicht zum Script. Ergebnis: `131B-5A4C-01012000-ota-file.zigbee`.
+   `-v` = neue `ZB_OTA_FILE_VERSION` (Beispiel: App-Release 0x10 = „1.0“, Build 1, Stack 0x20/0x00). `--tag` erwartet Tag-ID und Datei **durch Leerzeichen getrennt**, so steht es im argparse des Scripts. Die SDK-Doku `zcl_ota_upgrade.rst` zeigt `0x0000:datei`; das passt nicht zum Script. Ergebnis: `131B-5A4C-10012000-ota-file.zigbee`.
 
 ### Z2M einrichten
 
@@ -222,7 +222,7 @@ Nach dem Update gilt `StartUpOnOff` (Z6): Mit dem Default „aus“ ist ein vorh
    ```json
    [
      {
-       "url": "131B-5A4C-01012000-ota-file.zigbee",
+       "url": "131B-5A4C-10012000-ota-file.zigbee",
        "modelId": "ZL-LightChain"
      }
    ]

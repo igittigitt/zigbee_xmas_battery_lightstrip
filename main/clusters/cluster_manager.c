@@ -1,6 +1,9 @@
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "esp_app_desc.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_zigbee.h"
@@ -21,12 +24,32 @@ static const char *TAG = "CLUSTER_MANAGER";
 static uint8_t s_manufacturer_name[ZCL_STRING_MAX_LEN + 1];
 static uint8_t s_model_identifier[ZCL_STRING_MAX_LEN + 1];
 static uint8_t s_sw_build_id[ZB_SW_BUILD_ID_MAX_LEN + 1];
+static uint8_t s_date_code[ZB_DATE_CODE_MAX_LEN + 1];
 
 static void zcl_string_from_cstr(uint8_t *dst, const char *src)
 {
     size_t len = strnlen(src, ZCL_STRING_MAX_LEN);
     dst[0] = (uint8_t)len;
     memcpy(&dst[1], src, len);
+}
+
+/* Compile date of the app description ("Mmm dd yyyy", format of __DATE__, C17 6.10.8.1)
+ * as "YYYYMMDD". Returns false if the image has no date (CONFIG_APP_COMPILE_TIME_DATE off). */
+static bool build_date_code(char *out, size_t out_size)
+{
+    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    const char *date = esp_app_get_description()->date;
+    if (strlen(date) != 11) {
+        return false;
+    }
+    const char *pos = strstr(months, (char[]){date[0], date[1], date[2], '\0'});
+    if (pos == NULL || (pos - months) % 3 != 0) {
+        return false;
+    }
+    unsigned month = (unsigned)(pos - months) / 3 + 1;
+    unsigned day = (unsigned)atoi(&date[4]);  // day of month is space-padded ("Nov  1")
+    snprintf(out, out_size, "%.4s%02u%02u", &date[7], month, day);
+    return true;
 }
 
 static esp_err_t basic_add_identity(ezb_af_ep_desc_t ep_desc)
@@ -46,13 +69,26 @@ static esp_err_t basic_add_identity(ezb_af_ep_desc_t ep_desc)
 
     char sw_build_id[ZB_SW_BUILD_ID_MAX_LEN + 1];
     snprintf(sw_build_id, sizeof(sw_build_id), ZB_SW_BUILD_ID_FORMAT,
-             (unsigned)ZB_OTA_APP_RELEASE, (unsigned)ZB_OTA_APP_BUILD);
+             (unsigned)(ZB_OTA_APP_RELEASE >> 4), (unsigned)(ZB_OTA_APP_RELEASE & 0x0F),
+             (unsigned)ZB_OTA_APP_BUILD);
     s_sw_build_id[0] = (uint8_t)strnlen(sw_build_id, ZB_SW_BUILD_ID_MAX_LEN);
     memcpy(&s_sw_build_id[1], sw_build_id, s_sw_build_id[0]);
     ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_zcl_basic_cluster_desc_add_attr(
                             basic, EZB_ZCL_ATTR_BASIC_SW_BUILD_ID_ID, s_sw_build_id)),
                         TAG, "SWBuildID");
-    ESP_LOGI(TAG, "SWBuildID %s, OTA file version 0x%08" PRIx32, sw_build_id, (uint32_t)ZB_OTA_FILE_VERSION);
+
+    char date_code[ZB_DATE_CODE_MAX_LEN + 1];
+    if (build_date_code(date_code, sizeof(date_code))) {
+        s_date_code[0] = (uint8_t)strnlen(date_code, ZB_DATE_CODE_MAX_LEN);
+        memcpy(&s_date_code[1], date_code, s_date_code[0]);
+        ESP_RETURN_ON_ERROR(esp_zigbee_err_to_esp(ezb_zcl_basic_cluster_desc_add_attr(
+                                basic, EZB_ZCL_ATTR_BASIC_DATE_CODE_ID, s_date_code)),
+                            TAG, "DateCode");
+    } else {
+        date_code[0] = '\0';  // no compile date in the image: attribute keeps its default
+    }
+    ESP_LOGI(TAG, "SWBuildID %s, DateCode %s, OTA file version 0x%08" PRIx32, sw_build_id, date_code,
+             (uint32_t)ZB_OTA_FILE_VERSION);
     return ESP_OK;
 }
 

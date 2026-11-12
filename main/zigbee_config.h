@@ -175,8 +175,10 @@
  * distributed via OTA. Layout per ezbee/zcl/cluster/ota_file.h:
  * app release | app build | stack release | stack build (one byte each).
  * Stack part 0x20 0x00 as in the Espressif example (stack release 2.0).
+ * Release bytes are major/minor nibbles: the Zigbee2MQTT frontend shows 0x10 as
+ * "1.0" (formatOtaFileVersion, zigbee2mqtt-windfront src/components/ota-page/index.ts).
  */
-#define ZB_OTA_APP_RELEASE              0x01
+#define ZB_OTA_APP_RELEASE              0x10
 #define ZB_OTA_APP_BUILD                0x00
 #define ZB_OTA_STACK_RELEASE            0x20
 #define ZB_OTA_STACK_BUILD              0x00
@@ -184,14 +186,23 @@
                                          ((uint32_t)ZB_OTA_STACK_RELEASE << 8) | (uint32_t)ZB_OTA_STACK_BUILD)
 
 /**
- * Basic cluster SWBuildID (0x4000): readable version "<app release>.<app build>"
- * derived from the values above, e.g. "1.0". Zigbee2MQTT shows it as the device
- * firmware in Home Assistant (sw_version = softwareBuildID, zigbee2mqtt
+ * Basic cluster SWBuildID (0x4000): readable version "<major>.<minor>.<build>"
+ * derived from ZB_OTA_APP_RELEASE (nibbles) and ZB_OTA_APP_BUILD, e.g. "1.0.0",
+ * matching the "App: 1.0 build 0" of the Z2M OTA page. Zigbee2MQTT shows it as
+ * the device firmware in Home Assistant (sw_version = softwareBuildID, zigbee2mqtt
  * lib/extension/homeassistant.ts). ZCL character string, max. 16 characters
  * (default value with 16 characters in compat/zcl/esp_zigbee_zcl_basic.h).
  */
-#define ZB_SW_BUILD_ID_FORMAT           "%u.%u"
+#define ZB_SW_BUILD_ID_FORMAT           "%u.%u.%u"
 #define ZB_SW_BUILD_ID_MAX_LEN          16
+
+/**
+ * Basic cluster DateCode (0x0006): build date "YYYYMMDD", taken from the compile
+ * date in the app description (esp_app_get_description()->date, __DATE__ of
+ * esp_app_desc.c, CONFIG_APP_COMPILE_TIME_DATE). Z2M shows it below the firmware
+ * ID on the OTA page. ZCL character string, max. 16 characters.
+ */
+#define ZB_DATE_CODE_MAX_LEN            16
 
 /**
  * MaximumDataSize of the Image Block Request (ezb_zcl_ota_upgrade_set_download_block_size).

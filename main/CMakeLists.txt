@@ -32,6 +32,7 @@ idf_component_register(
     REQUIRES
         nvs_flash
         app_update
+        esp_app_format
         esp_timer
         esp_pm
         esp_driver_gpio
