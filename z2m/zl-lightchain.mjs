@@ -41,6 +41,11 @@ export default {
     // OTA (goal Z16): plain definition field (Definition.ota, zigbee-herdsman-converters src/lib/types.ts);
     // Z2M then offers updates and HA gets an "update" entity. The device has the genOta client cluster.
     ota: true,
+    // Device image for every ZL-LightChain without per-device setup. Not in the Definition type, but
+    // read by Z2M for external definitions (zigbee2mqtt lib/extension/bridge.ts getDefinitionPayload:
+    // device option `icon` first, then definition.icon). The file lies in device_icons/ next to
+    // Z2M's configuration.yaml (repo: z2m/device_icons/zl-lightchain.png).
+    icon: 'device_icons/zl-lightchain.png',
     extend: [
         deviceAddCustomCluster(RUNTIME_CLUSTER, {
             name: RUNTIME_CLUSTER,

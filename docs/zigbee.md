@@ -160,7 +160,15 @@ Prüfen, wenn das Gerät gepairt ist.
 
 ### Gerätebild
 
-Z2M hat für `ZL-LightChain` kein offizielles Gerätebild und zeigt einen Platzhalter. Ein eigenes Bild geht nur **pro Gerät** über die Geräteoption `icon` in der `configuration.yaml` von Z2M ([Z2M-Doku „Devices and Groups“](https://www.zigbee2mqtt.io/guide/configuration/devices-groups.html), gelesen am 2026-11-11). Im Converter lässt es sich nicht hinterlegen: `Definition` in zigbee-herdsman-converters `src/lib/types.ts` hat kein Feld `icon` (Branch master, gelesen am 2026-11-11).
+Z2M hat für `ZL-LightChain` kein offizielles Gerätebild und zeigt sonst einen Platzhalter.
+
+**Für alle Geräte (Standard): Feld `icon` im Converter.** [zl-lightchain.mjs](../z2m/zl-lightchain.mjs) setzt `icon: 'device_icons/zl-lightchain.png'`. Jedes Gerät, das nach dem Interview diesem Converter zugeordnet ist, bekommt das Bild ohne weitere Einstellung. Belegt im Quelltext, nicht in der Doku (Branch master, gelesen am 2026-11-12):
+- zigbee2mqtt `lib/extension/bridge.ts`, `getDefinitionPayload`: `let icon = device.options.icon ?? definitionIcon;` mit dem Kommentar „icon is valid for external definitions“. Die Geräteoption hat also Vorrang, sonst gilt das Feld aus der Definition. Platzhalter `$model` und `$zigbeeModel` ersetzt Z2M.
+- Frontend (zigbee2mqtt-windfront `src/components/device/LazyImage.tsx`): zuerst `definition.icon`, dann das Bild aus der Z2M-Doku zum Modell (so kommen offiziell unterstützte Geräte zu ihrem Bild), zuletzt das generische Zigbee-Bild.
+- Im Typ `Definition` (zigbee-herdsman-converters `src/lib/types.ts`) fehlt das Feld, und die Z2M-Doku zu External Convertern nennt es nicht. Die frühere Aussage hier, das gehe nicht, war deshalb falsch.
+- Voraussetzung: `zl-lightchain.png` (im Repo [z2m/device_icons/](../z2m/device_icons/)) liegt im Ordner `device_icons` neben der `configuration.yaml`. Am Gerät bestätigt (2026-11-12): Das Bild kommt aus dem Converter-Feld.
+
+**Pro Gerät (überschreibt den Converter):** Geräteoption `icon` in der `configuration.yaml` von Z2M ([Z2M-Doku „Devices and Groups“](https://www.zigbee2mqtt.io/guide/configuration/devices-groups.html), gelesen am 2026-11-11). Nur noch nötig, wenn ein einzelnes Gerät ein anderes Bild bekommen soll; bestehende Einträge mit demselben Bild können entfallen.
 
 ```yaml
 devices:
@@ -175,7 +183,7 @@ devices:
 - Z2M-Frontend → Werkzeuge → „Gerätebilder lokalisieren“ meldet für `ZL-LightChain`-Geräte „Error“ (beobachtet 2026-11-11). Ich glaube es könnte so sein: Die Funktion lädt offizielle Bilder von zigbee2mqtt.io, und für dieses Modell gibt es keins. Ob sie ein eigenes `icon` überschreibt, ist **[UNBELEGT]**.
 - Bildformat: Für `icon` nennt die Doku keine Anforderungen **[UNBELEGT]**: welche Dateitypen gehen, Höchstgröße, Anzeigegröße. Offizielle Gerätebilder müssen PNG, 512 × 512 px und mit transparentem Hintergrund sein ([Z2M-Doku „Support new devices“, Abschnitt 5](https://www.zigbee2mqtt.io/advanced/support-new-devices/01_support_new_devices.html)). Eigene Wahl: dieselben Werte für das eigene Bild.
 - Das Bild erscheint im Z2M-Frontend. Ein Weg, ein Gerätebild auf die HA-Geräteseite zu bringen, ist nicht bekannt. Über `homeassistant:` (gleiche Doku) lassen sich nur die Icons der Entitäten ändern (z. B. `icon: mdi:string-lights`).
-- Die Update-Entität „Firmware“ (siehe [OTA-Update](#ota-update-z16)) zeigt in HA das Z2M-Logo. Laut einer Zusammenfassung von zigbee2mqtt `lib/extension/homeassistant.ts` setzt Z2M dort fest `entity_picture` auf `…/images/logo.png`; verbatim nicht gelesen, **[UNBELEGT]**.
+- Die Update-Entität „Firmware“ (siehe [OTA-Update](#ota-update-z16)) zeigt in HA das Z2M-Logo. zigbee2mqtt `lib/extension/homeassistant.ts` setzt dort fest `entity_picture: "https://github.com/Koenkk/zigbee2mqtt/raw/master/images/logo.png"` (Branch master, verbatim gelesen am 2026-11-11). Über den Converter lässt sich das nicht ändern.
 
 ### Gerät neu anlernen
 
