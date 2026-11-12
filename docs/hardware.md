@@ -204,6 +204,16 @@ Akku+ ──[ 1 MΩ 1% ]──┬──[ 1 MΩ 1% ]── GND
 ```
 
 - Teiler 1:1 → 4,2 V Akku = 2,1 V am ADC. Ruhestrom (Ohmsches Gesetz) 4,2 V / 2 MΩ = 2,1 µA dauerhaft.
+- **Widerstände paarweise selektieren:** Die Firmware rechnet nur mit dem Verhältnis (R_TOP + R_BOTTOM) / R_BOTTOM ([battery.c](../main/battery/battery.c), Werte `BATTERY_DIVIDER_R_*_KOHM`), nicht mit dem Absolutwert. Deshalb die beiden Widerstände eines Teilers vor dem Einbau ausmessen und ein Paar mit möglichst gleichem Wert verwenden. Dann stimmt das 1:1 der Firmware unabhängig vom Nennwert, und die Toleranz (2 × 1 % ≈ ±42 mV bei 4,2 V, Rechnung, siehe [Kalibrierung](#kalibrierung)) fällt weitgehend weg. Das gilt für jeden Wert im folgenden Bereich:
+
+  | Paar | Dauerstrom bei 4,2 V (Rechnung) | Stand |
+  |---|---|---|
+  | 2 × 1 MΩ | 2,1 µA | erprobt (Prototyp, kalibriert) |
+  | 2 × 910 kΩ | 2,3 µA | im Einsatz |
+  | 2 × 470 kΩ | 4,5 µA | nicht erprobt |
+  | 2 × 100 kΩ | 21 µA | nicht erprobt; zu viel Dauerstrom für Z9 |
+
+  Untergrenze ist der Dauerstrom (er fließt immer, auch im Sleep). Eine belegte Obergrenze gibt es nicht: Über 1 MΩ wächst der Einfluss des Leckstroms des ADC-Pads am Mittelknoten, dessen Größe **[UNBELEGT]** ist. Empfehlung daher 2 × 470 kΩ bis 2 × 1 MΩ, bevorzugt am oberen Ende.
 - **ADC-Genauigkeit laut ESP32-H2-Datenblatt, Tab. 4-6** (nach Hardware- und Software-Kalibrierung; gilt für Chips ab Date Code 342023 bzw. D/C 2334):
 
   | Dämpfung | Messbereich | Gesamtfehler |

@@ -36,6 +36,13 @@
 #define BATTERY_RUNTIME_ATTR_CELLS_PARALLEL_ID      0x0012
 
 /**
+ * Delay between a write and applying it (esp_timer, outside the stack
+ * callback). Lets the stack send the Write Attributes response first and
+ * combines writes that arrive together into one NVS save and one report.
+ */
+#define BATTERY_RUNTIME_APPLY_DELAY_MS              100
+
+/**
  * @brief Add the remaining-time cluster (server, ID 0xFC00) to an endpoint.
  *
  * The remaining-time and voltage attributes are read-only, the cell

@@ -64,7 +64,10 @@ static battery_model_cb_t s_cb;
 
 static uint64_t usable_uaus(const battery_cells_t *cells)
 {
-    return (uint64_t)cells->capacity_mah * cells->parallel * 1000 * US_PER_HOUR * BATTERY_USABLE_PERMILLE / 1000;
+    // Permille first, then hours: 20000 mAh x 8 x 1000 x 3.6e9 us x 880 would overflow uint64
+    // (max 1.8e19); in this order the largest value is 1.4e8 uA h x 3.6e9 = 5.1e17.
+    // Same result as before for capacities that are whole mAh (NVS counters stay valid).
+    return (uint64_t)cells->capacity_mah * cells->parallel * BATTERY_USABLE_PERMILLE * US_PER_HOUR;
 }
 
 static uint32_t load_ua(uint8_t level)
@@ -109,8 +112,13 @@ void battery_model_get(battery_runtime_t *runtime)
 
     // Light-on time at the level used for "on" (dimming), idle current included
     runtime->on_time_x10h = clamp_u16(remaining / load_ua(light_get_on_level()) / US_PER_TENTH_HOUR);
-    runtime->days_x10 = day_avg ? clamp_u16(remaining * 10 / day_avg) : BATTERY_UNKNOWN_U16;
-    runtime->percent = usable ? (uint8_t)(remaining * 100 / usable) : 0;
+    // Divide the divisor instead of multiplying the counter: remaining * 100 overflows uint64
+    // from about 1.8e17 uA us (already one 3350 mAh cell is 1.06e19)
+    runtime->days_x10 = day_avg >= 10 ? clamp_u16(remaining / (day_avg / 10)) : BATTERY_UNKNOWN_U16;
+    runtime->percent = usable >= 100 ? (uint8_t)(remaining / (usable / 100)) : 0;
+    if (runtime->percent > 100) {
+        runtime->percent = 100;
+    }
 }
 
 static void nvs_save_cells(const battery_cells_t *cells)
@@ -235,7 +243,7 @@ static void set_percent(uint8_t percent)
     }
     portENTER_CRITICAL(&s_lock);
     book_locked(esp_timer_get_time());
-    s_consumed = s_usable * (100 - percent) / 100;
+    s_consumed = s_usable / 100 * (100 - percent);     // s_usable * (100 - percent) would overflow
     s_day_start = s_consumed;
     s_counter_known = true;
     portEXIT_CRITICAL(&s_lock);
@@ -306,7 +314,7 @@ esp_err_t battery_model_init(battery_model_cb_t cb)
     s_usable = usable_uaus(&s_cells);
     if (!s_counter_known) {
         if (!APP_BATTERY_ADC) {
-            s_consumed = s_usable * (100 - APP_DEBUG_BATTERY_PERCENT) / 100;
+            s_consumed = s_usable / 100 * (100 - APP_DEBUG_BATTERY_PERCENT);
             s_counter_known = true;
             ESP_LOGW(TAG, "DEBUG: model starts at the emulated level %d %%", APP_DEBUG_BATTERY_PERCENT);
         } else {

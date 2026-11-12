@@ -148,7 +148,9 @@ esp_err_t battery_guard_boot_check(void)
 
     const uint32_t limit = after_emergency ? BATTERY_RESUME_MV : BATTERY_SHUTDOWN_MV;
     if (mv < limit) {
-        ESP_LOGW(TAG, "Battery %" PRIu32 " mV < %" PRIu32 " mV", mv, limit);
+        // Wakeup causes as bitmap of esp_sleep_source_t (diagnosis of the wake/sleep cycle)
+        ESP_LOGW(TAG, "Battery %" PRIu32 " mV < %" PRIu32 " mV (reset reason %d, wakeup causes 0x%08" PRIx32 ")",
+                 mv, limit, (int)esp_reset_reason(), esp_sleep_get_wakeup_causes());
         if (!woken_by_timer_only()) {
             empty_signal();     // button wakeup or reset: show "battery empty"
         }

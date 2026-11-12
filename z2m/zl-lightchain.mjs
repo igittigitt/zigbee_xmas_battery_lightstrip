@@ -54,9 +54,13 @@ export default {
                 remainingOnTime: {name: 'remainingOnTime', ID: 0x0000, type: ZCL_UINT16},
                 remainingDays: {name: 'remainingDays', ID: 0x0001, type: ZCL_UINT16},
                 batteryVoltageMv: {name: 'batteryVoltageMv', ID: 0x0002, type: ZCL_UINT16},
-                cellType: {name: 'cellType', ID: 0x0010, type: ZCL_ENUM8},
-                cellCapacity: {name: 'cellCapacity', ID: 0x0011, type: ZCL_UINT16},
-                cellsParallel: {name: 'cellsParallel', ID: 0x0012, type: ZCL_UINT8},
+                // write: true is required: zigbee-herdsman refuses to send a write to an attribute
+                // without it (zspec/zcl/utils.ts processAttributeWrite, NOT_AUTHORIZED "is not writable").
+                // min/max are checked there too (processRestrictions); same limits as the firmware
+                // (battery_config.h BATTERY_CELL_*).
+                cellType: {name: 'cellType', ID: 0x0010, type: ZCL_ENUM8, write: true, max: 1},
+                cellCapacity: {name: 'cellCapacity', ID: 0x0011, type: ZCL_UINT16, write: true, min: 100, max: 20000},
+                cellsParallel: {name: 'cellsParallel', ID: 0x0012, type: ZCL_UINT8, write: true, min: 1, max: 8},
             },
             commands: {},
             commandsResponse: {},
